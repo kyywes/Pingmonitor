@@ -1,0 +1,8 @@
+# Test GitHub Auto-Update System
+# Data: 2025-11-03
+#
+# Questo file è stato creato per testare il sistema di auto-update da GitHub.
+# Se vedi questo file, significa che l'aggiornamento automatico funziona correttamente!
+#
+# Test ID: TEST_001
+# Commit: Test sistema auto-update completo
