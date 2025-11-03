@@ -537,6 +537,9 @@ class MainWindowV2(QMainWindow):
             "Risposta (ms)", "Ultimo Controllo", "Uptime %", "Azioni"
         ])
 
+        # Disable editing on double-click (read-only table for monitoring)
+        self.monitoring_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
         # Enable context menu
         self.monitoring_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.monitoring_table.customContextMenuRequested.connect(self._show_device_context_menu)
@@ -890,17 +893,40 @@ class MainWindowV2(QMainWindow):
             self.monitoring_table.setRowCount(len(devices))
 
             for row, device in enumerate(devices):
-                # Status
+                # Enhanced Status with Ping/Web details
+                ping_status = getattr(device, 'last_ping_status', None)
+                web_status = getattr(device, 'last_web_status', None)
+
+                # Build detailed status string
                 if device.current_status == 'online':
-                    status_icon = "🟢 ONLINE"
+                    if ping_status and web_status:
+                        status_icon = "🟢 ONLINE (Ping ✓ Web ✓)"
+                    elif ping_status and not web_status:
+                        status_icon = "🟡 DEGRADED (Ping ✓ Web ✗)"
+                    elif ping_status is not None:
+                        status_icon = f"🟢 ONLINE (Ping {'✓' if ping_status else '✗'})"
+                    else:
+                        status_icon = "🟢 ONLINE"
                 elif device.current_status == 'offline':
-                    status_icon = "🔴 OFFLINE"
+                    if ping_status is False and web_status is False:
+                        status_icon = "🔴 OFFLINE (Ping ✗ Web ✗)"
+                    elif ping_status is False:
+                        status_icon = "🔴 OFFLINE (Ping ✗)"
+                    else:
+                        status_icon = "🔴 OFFLINE"
                 elif device.current_status == 'degraded':
-                    status_icon = "🟡 DEGRADED"
+                    if ping_status and web_status is False:
+                        status_icon = "🟡 DEGRADED (Ping ✓ Web ✗)"
+                    elif ping_status and web_status is None:
+                        status_icon = "🟡 DEGRADED (Ping ✓)"
+                    else:
+                        status_icon = "🟡 DEGRADED"
                 else:
                     status_icon = "⚪ UNKNOWN"
 
-                self.monitoring_table.setItem(row, 0, QTableWidgetItem(status_icon))
+                status_item = QTableWidgetItem(status_icon)
+                status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Disable editing
+                self.monitoring_table.setItem(row, 0, status_item)
                 self.monitoring_table.setItem(row, 1, QTableWidgetItem(device.ip_address))
                 self.monitoring_table.setItem(row, 2, QTableWidgetItem(device.name))
                 self.monitoring_table.setItem(row, 3, QTableWidgetItem(device.device_type))

@@ -72,6 +72,10 @@ class Device(Base, TimestampMixin):
     last_status_change = Column(String(30))
     response_time = Column(Float, default=0.0)  # milliseconds
 
+    # Detailed status for ping and web checks
+    last_ping_status = Column(Boolean, default=None)  # True=OK, False=FAIL, None=N/A
+    last_web_status = Column(Boolean, default=None)  # True=OK, False=FAIL, None=N/A
+
     # Statistics
     total_checks = Column(Integer, default=0)
     successful_checks = Column(Integer, default=0)
