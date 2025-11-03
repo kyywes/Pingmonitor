@@ -145,15 +145,21 @@ class NotificationService:
 
             # Create email
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"[CRITICAL] Manual Intervention Required - {device_name}"
+            msg['Subject'] = f"[CRITICO] Intervento Manuale Richiesto - {device_name}"
             msg['From'] = config['username']
-            msg['To'] = config['alert_email']
+
+            # Recipients: alert_email + assistenza.paipl@eredimercuri.com
+            recipients = [config['alert_email']]
+            assistenza_email = "assistenza.paipl@eredimercuri.com"
+            if assistenza_email not in recipients:
+                recipients.append(assistenza_email)
+            msg['To'] = ', '.join(recipients)
 
             # Get recovery info
             recovery_info = self.recovery_attempts.get(device_ip, {})
             recovery_attempts = recovery_info.get('attempts', 0)
 
-            # HTML email body
+            # HTML email body (Italian)
             html_body = f"""
             <html>
             <head>
@@ -238,76 +244,76 @@ class NotificationService:
             <body>
                 <div class="container">
                     <div class="header">
-                        <h1>⚠️ CRITICAL ALERT</h1>
-                        <p>Manual Intervention Required</p>
+                        <h1>⚠️ ALLERTA CRITICA</h1>
+                        <p>Intervento Manuale Richiesto</p>
                     </div>
 
                     <div class="alert-icon">🚨</div>
 
                     <div class="critical-message">
-                        <h2 style="color: #dc2626; margin-top: 0;">Device Requires Manual Intervention</h2>
-                        <p>Automatic recovery has been attempted but <strong>failed</strong>.
-                        The web service on this device is still unreachable after automatic reboot.</p>
+                        <h2 style="color: #dc2626; margin-top: 0;">Dispositivo Richiede Intervento Manuale</h2>
+                        <p>Il recupero automatico è stato tentato ma è <strong>fallito</strong>.
+                        Il servizio web su questo dispositivo è ancora irraggiungibile dopo il riavvio automatico.</p>
                     </div>
 
                     <div class="device-info">
-                        <h3>Device Information</h3>
+                        <h3>Informazioni Dispositivo</h3>
                         <div class="info-row">
-                            <span class="info-label">Device Name:</span>
+                            <span class="info-label">Nome Dispositivo:</span>
                             <span class="info-value"><strong>{device_name}</strong></span>
                         </div>
                         <div class="info-row">
-                            <span class="info-label">IP Address:</span>
+                            <span class="info-label">Indirizzo IP:</span>
                             <span class="info-value"><strong>{device_ip}</strong></span>
                         </div>
                         <div class="info-row">
-                            <span class="info-label">Location:</span>
+                            <span class="info-label">Posizione:</span>
                             <span class="info-value">{device_info.get('location', 'N/A')}</span>
                         </div>
                         <div class="info-row">
-                            <span class="info-label">Port:</span>
+                            <span class="info-label">Porta:</span>
                             <span class="info-value">{device_info.get('port', 'N/A')}</span>
                         </div>
                         <div class="info-row">
-                            <span class="info-label">Alert Time:</span>
-                            <span class="info-value">{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</span>
+                            <span class="info-label">Ora Allerta:</span>
+                            <span class="info-value">{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</span>
                         </div>
                     </div>
 
                     <div class="recovery-section">
-                        <h3>🔄 Auto-Recovery Attempts</h3>
-                        <p><strong>Attempts Made:</strong> {recovery_attempts}</p>
-                        <p><strong>Last Action:</strong> Automatic reboot via SSH</p>
-                        <p><strong>Wait Time:</strong> 5 minutes post-reboot</p>
-                        <p><strong>Result:</strong> ❌ Web service still unreachable</p>
-                        <p><strong>Network Status:</strong> ✅ Ping responding (network OK)</p>
-                        <p><strong>Web Service:</strong> ❌ HTTP/HTTPS not responding</p>
+                        <h3>🔄 Tentativi di Recupero Automatico</h3>
+                        <p><strong>Tentativi Effettuati:</strong> {recovery_attempts}</p>
+                        <p><strong>Ultima Azione:</strong> Riavvio automatico via SSH</p>
+                        <p><strong>Tempo di Attesa:</strong> 5 minuti post-riavvio</p>
+                        <p><strong>Risultato:</strong> ❌ Servizio web ancora irraggiungibile</p>
+                        <p><strong>Stato Rete:</strong> ✅ Ping risponde (rete OK)</p>
+                        <p><strong>Servizio Web:</strong> ❌ HTTP/HTTPS non risponde</p>
                     </div>
 
                     <div class="action-steps">
-                        <h3>📋 Required Actions</h3>
+                        <h3>📋 Azioni Richieste</h3>
                         <ol>
-                            <li><strong>Connect via SSH:</strong> ssh root@{device_ip}</li>
-                            <li><strong>Check service status:</strong> systemctl status [service-name]</li>
-                            <li><strong>Check logs:</strong> journalctl -xe</li>
-                            <li><strong>Check disk space:</strong> df -h</li>
-                            <li><strong>Check memory:</strong> free -h</li>
-                            <li><strong>Restart services manually</strong> if needed</li>
-                            <li><strong>Verify web interface</strong> accessible</li>
+                            <li><strong>Connettiti via SSH:</strong> ssh root@{device_ip}</li>
+                            <li><strong>Verifica stato servizio:</strong> systemctl status [nome-servizio]</li>
+                            <li><strong>Controlla i log:</strong> journalctl -xe</li>
+                            <li><strong>Controlla spazio disco:</strong> df -h</li>
+                            <li><strong>Controlla memoria:</strong> free -h</li>
+                            <li><strong>Riavvia servizi manualmente</strong> se necessario</li>
+                            <li><strong>Verifica accessibilità</strong> interfaccia web</li>
                         </ol>
                         <p style="margin-top: 15px; padding: 10px; background-color: white; border-radius: 5px;">
-                            <strong>Quick Access:</strong><br>
-                            Web Interface: <a href="http://{device_ip}:{device_info.get('port', 80)}">http://{device_ip}:{device_info.get('port', 80)}</a><br>
-                            SSH Command: <code>ssh root@{device_ip}</code>
+                            <strong>Accesso Rapido:</strong><br>
+                            Interfaccia Web: <a href="http://{device_ip}:{device_info.get('port', 80)}">http://{device_ip}:{device_info.get('port', 80)}</a><br>
+                            Comando SSH: <code>ssh root@{device_ip}</code>
                         </p>
                     </div>
 
                     <div class="footer">
-                        <p><strong>PingMonitor Pro v2.0</strong></p>
-                        <p>Automatic Network Monitoring with Intelligent Recovery</p>
-                        <p>This alert was sent because automatic recovery failed</p>
+                        <p><strong>PingMonitor Pro v2.3</strong></p>
+                        <p>Monitoraggio di Rete Automatico con Recupero Intelligente</p>
+                        <p>Questa allerta è stata inviata perché il recupero automatico è fallito</p>
                         <p style="margin-top: 10px; color: #dc2626;">
-                            <strong>⚠️ IMMEDIATE ATTENTION REQUIRED</strong>
+                            <strong>⚠️ ATTENZIONE IMMEDIATA RICHIESTA</strong>
                         </p>
                     </div>
                 </div>

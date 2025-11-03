@@ -60,10 +60,10 @@ class EmailTestWorker(QThread):
             msg['To'] = to_email
 
             if self.test_type == 'simple':
-                msg['Subject'] = "PingMonitor Pro - Test Email"
+                msg['Subject'] = "PingMonitor Pro - Email di Test"
                 body = self._create_simple_test_email()
             else:
-                msg['Subject'] = "[TEST] PingMonitor Pro - Critical Alert Test"
+                msg['Subject'] = "[TEST] PingMonitor Pro - Test Allerta Critica"
                 body = self._create_full_alert_test()
 
             msg.attach(MIMEText(body, 'html'))
@@ -94,7 +94,7 @@ class EmailTestWorker(QThread):
             self.result.emit(False, f"❌ Failed to send email: {str(e)}")
 
     def _create_simple_test_email(self):
-        """Create simple test email"""
+        """Create simple test email (Italian)"""
         return f"""
 <!DOCTYPE html>
 <html>
@@ -111,21 +111,21 @@ class EmailTestWorker(QThread):
 <body>
     <div class="container">
         <div class="header">
-            <h1>✅ Email Test Successful</h1>
+            <h1>✅ Test Email Riuscito</h1>
         </div>
         <div class="content">
-            <p class="success">PingMonitor Pro Email System Working!</p>
-            <p>This is a test email from <strong>PingMonitor Pro v2.0</strong>.</p>
-            <p>If you received this email, it means your email alert system is configured correctly.</p>
-            <p><strong>Test Details:</strong></p>
+            <p class="success">Sistema Email PingMonitor Pro Funzionante!</p>
+            <p>Questa è una email di test da <strong>PingMonitor Pro v2.3</strong>.</p>
+            <p>Se hai ricevuto questa email, significa che il sistema di allerte email è configurato correttamente.</p>
+            <p><strong>Dettagli Test:</strong></p>
             <ul>
-                <li>Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</li>
-                <li>Type: Simple Test</li>
-                <li>Status: ✅ Working</li>
+                <li>Ora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</li>
+                <li>Tipo: Test Semplice</li>
+                <li>Stato: ✅ Funzionante</li>
             </ul>
         </div>
         <div class="footer">
-            PingMonitor Pro v2.0 - Professional Network Monitoring<br>
+            PingMonitor Pro v2.3 - Monitoraggio di Rete Professionale<br>
             by Fabrizio Cerchia
         </div>
     </div>
@@ -134,7 +134,7 @@ class EmailTestWorker(QThread):
 """
 
     def _create_full_alert_test(self):
-        """Create full alert test email (simulates real alert)"""
+        """Create full alert test email (simulates real alert) - Italian"""
         return f"""
 <!DOCTYPE html>
 <html>
@@ -155,45 +155,45 @@ class EmailTestWorker(QThread):
     <div class="container">
         <div class="header">
             <div class="alert-icon">⚠️</div>
-            <h1>[TEST] CRITICAL ALERT</h1>
-            <p>Manual Intervention Required</p>
+            <h1>[TEST] ALLERTA CRITICA</h1>
+            <p>Intervento Manuale Richiesto</p>
         </div>
 
         <div class="device-info">
-            <h3>📱 Device Information (TEST)</h3>
-            <p><strong>Device Name:</strong> Test Device</p>
-            <p><strong>IP Address:</strong> 192.168.1.100</p>
-            <p><strong>Location:</strong> Test Location</p>
-            <p><strong>Status:</strong> 🔴 Web Service DOWN</p>
+            <h3>📱 Informazioni Dispositivo (TEST)</h3>
+            <p><strong>Nome Dispositivo:</strong> Dispositivo Test</p>
+            <p><strong>Indirizzo IP:</strong> 192.168.1.100</p>
+            <p><strong>Posizione:</strong> Posizione Test</p>
+            <p><strong>Stato:</strong> 🔴 Servizio Web NON Attivo</p>
         </div>
 
         <div class="recovery-info">
-            <h3>🔄 Auto-Recovery Attempted</h3>
-            <p><strong>Recovery Action:</strong> SSH Reboot executed</p>
-            <p><strong>Reboot Time:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            <p><strong>Wait Period:</strong> 5 minutes elapsed</p>
-            <p><strong>Result:</strong> ❌ Device still DOWN after recovery</p>
+            <h3>🔄 Recupero Automatico Tentato</h3>
+            <p><strong>Azione di Recupero:</strong> Riavvio SSH eseguito</p>
+            <p><strong>Ora Riavvio:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+            <p><strong>Periodo di Attesa:</strong> 5 minuti trascorsi</p>
+            <p><strong>Risultato:</strong> ❌ Dispositivo ancora NON attivo dopo recupero</p>
         </div>
 
         <div class="action-required">
-            <h3>⚡ Action Required</h3>
-            <p><strong>This is a TEST alert.</strong> In a real scenario, you would need to:</p>
+            <h3>⚡ Azione Richiesta</h3>
+            <p><strong>Questa è una allerta di TEST.</strong> In uno scenario reale, dovresti:</p>
             <ol>
-                <li>Connect via SSH to investigate</li>
-                <li>Check system logs and services</li>
-                <li>Perform manual diagnostics</li>
-                <li>Restart services or reboot device</li>
+                <li>Connetterti via SSH per investigare</li>
+                <li>Controllare i log di sistema e i servizi</li>
+                <li>Eseguire diagnostica manuale</li>
+                <li>Riavviare servizi o riavviare il dispositivo</li>
             </ol>
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-            <a href="http://192.168.1.100" class="button">🌐 Open Web Interface</a>
-            <a href="#" class="button">💻 SSH Connect</a>
+            <a href="http://192.168.1.100" class="button">🌐 Apri Interfaccia Web</a>
+            <a href="#" class="button">💻 Connessione SSH</a>
         </div>
 
         <div class="footer">
-            <p><strong>This is a TEST email</strong></p>
-            <p>PingMonitor Pro v2.0 - Professional Network Monitoring<br>
+            <p><strong>Questa è una email di TEST</strong></p>
+            <p>PingMonitor Pro v2.3 - Monitoraggio di Rete Professionale<br>
             by Fabrizio Cerchia</p>
         </div>
     </div>

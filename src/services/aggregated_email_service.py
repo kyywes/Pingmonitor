@@ -124,9 +124,12 @@ class AggregatedEmailService:
         """
         recipients = []
 
-        # Primary recipient
-        primary_email = "fabrizio.cerchia@eredimercuri.com"
-        recipients.append(primary_email)
+        # Primary recipients
+        primary_emails = [
+            "fabrizio.cerchia@eredimercuri.com",
+            "assistenza.paipl@eredimercuri.com"
+        ]
+        recipients.extend(primary_emails)
 
         # Additional recipients from config
         additional = self.email_config.get('additional_recipients', [])
