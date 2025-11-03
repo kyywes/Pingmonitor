@@ -1,0 +1,90 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PingMonitor specific
+*.db
+*.sqlite
+*.sqlite3
+logs/
+data/
+temp/
+*.log
+
+# Secrets (non committare mai credenziali!)
+secrets.enc
+.key
+*.pem
+*.p12
+
+# Config locale (mantieni template, non file con dati sensibili)
+config/config.json
+
+# Backup
+backups/
+*.bak
+
+# Temp GitHub
+github_temp/
+.pingmonitor/
+
+# Installer output
+installer/Output/
+
+# Compiled
+*.exe
+*.dll
+*.pyd

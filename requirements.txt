@@ -1,0 +1,28 @@
+# PingMonitor Pro v2.3 - Requirements
+# Dipendenze Essenziali - Installazione Minima
+
+# Core UI
+PyQt6>=6.6.0
+
+# Networking & Monitoring
+requests>=2.31.0
+paramiko>=3.4.0
+icmplib>=3.0.4
+
+# Security
+cryptography>=41.0.7
+
+# Database
+SQLAlchemy>=2.0.23
+
+# Charts & Reports
+matplotlib>=3.8.2
+openpyxl>=3.1.2
+
+# Utilities
+rich>=13.7.0
+loguru>=0.7.2
+Pillow>=10.0.0
+
+# Build (optional)
+pyinstaller>=6.3.0
