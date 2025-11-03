@@ -58,7 +58,46 @@ class DatabaseManager:
 
         # Create all tables
         Base.metadata.create_all(self._engine)
+
+        # Run database migrations for schema updates
+        self._run_migrations()
+
         logger.info("Database initialized successfully")
+
+    def _run_migrations(self):
+        """
+        Run database migrations for schema updates
+        Adds new columns to existing tables if they don't exist
+        """
+        try:
+            from sqlalchemy import inspect, text
+
+            inspector = inspect(self._engine)
+
+            # Migration 1: Add last_ping_status and last_web_status to devices table
+            if 'devices' in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns('devices')]
+
+                migrations_needed = []
+                if 'last_ping_status' not in columns:
+                    migrations_needed.append("ALTER TABLE devices ADD COLUMN last_ping_status BOOLEAN DEFAULT NULL")
+                if 'last_web_status' not in columns:
+                    migrations_needed.append("ALTER TABLE devices ADD COLUMN last_web_status BOOLEAN DEFAULT NULL")
+
+                if migrations_needed:
+                    logger.info(f"Running {len(migrations_needed)} database migration(s)...")
+                    with self._engine.connect() as conn:
+                        for migration_sql in migrations_needed:
+                            logger.info(f"Executing: {migration_sql}")
+                            conn.execute(text(migration_sql))
+                            conn.commit()
+                    logger.info("✅ Database migrations completed successfully")
+                else:
+                    logger.debug("No database migrations needed")
+
+        except Exception as e:
+            logger.error(f"Error running database migrations: {e}", exc_info=True)
+            # Don't fail if migrations fail - app can still work
 
     def get_session(self):
         """Get a new database session"""
