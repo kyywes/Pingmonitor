@@ -238,7 +238,7 @@ class AggregatedEmailService:
         # Footer
         html += """
     <div class="footer">
-        <p>🤖 Questo è un messaggio automatico generato da PingMonitor v2.3</p>
+        <p>🤖 Questo è un messaggio automatico generato da PingMonitor</p>
         <p>Per ulteriori informazioni, consultare il dashboard del sistema di monitoraggio.</p>
     </div>
 </body>

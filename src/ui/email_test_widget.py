@@ -115,7 +115,7 @@ class EmailTestWorker(QThread):
         </div>
         <div class="content">
             <p class="success">Sistema Email PingMonitor Funzionante!</p>
-            <p>Questa è una email di test da <strong>PingMonitor v2.3</strong>.</p>
+            <p>Questa è una email di test da <strong>PingMonitor</strong>.</p>
             <p>Se hai ricevuto questa email, significa che il sistema di allerte email è configurato correttamente.</p>
             <p><strong>Dettagli Test:</strong></p>
             <ul>
@@ -125,7 +125,6 @@ class EmailTestWorker(QThread):
             </ul>
         </div>
         <div class="footer">
-            PingMonitor v2.3 - Monitoraggio di Rete Professionale<br>
             by Fabrizio Cerchia
         </div>
     </div>
@@ -193,8 +192,7 @@ class EmailTestWorker(QThread):
 
         <div class="footer">
             <p><strong>Questa è una email di TEST</strong></p>
-            <p>PingMonitor v2.3 - Monitoraggio di Rete Professionale<br>
-            by Fabrizio Cerchia</p>
+            <p>by Fabrizio Cerchia</p>
         </div>
     </div>
 </body>
