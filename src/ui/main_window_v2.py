@@ -104,6 +104,11 @@ class MainWindowV2(QMainWindow):
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
+        # Ensure window has standard controls (minimize, maximize, close)
+        # This should be default, but we set it explicitly to be sure
+        from PyQt6.QtCore import Qt
+        self.setWindowFlags(Qt.WindowType.Window)
+
         geometry = self.config.get('ui.window_geometry', {})
         width = geometry.get('width', 1600)
         height = geometry.get('height', 900)
