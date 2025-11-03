@@ -309,14 +309,23 @@ class PingMonitorApp:
                 sys.exit(0)
 
             else:
-                # Error message
-                msg_box = QMessageBox(self.main_window)
-                msg_box.setWindowTitle("❌ Errore Aggiornamento")
-                msg_box.setIcon(QMessageBox.Icon.Critical)
-                msg_box.setText("Errore durante l'aggiornamento")
-                msg_box.setInformativeText(f"{message}\n\nL'applicazione continuerà a funzionare con la versione corrente.")
-                msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-                msg_box.exec()
+                # Error message - check if it's permission issue
+                if "PERMESSI INSUFFICIENTI" in message:
+                    msg_box = QMessageBox(self.main_window)
+                    msg_box.setWindowTitle("⚠️ Permessi Richiesti")
+                    msg_box.setIcon(QMessageBox.Icon.Warning)
+                    msg_box.setText("Aggiornamento disponibile")
+                    msg_box.setInformativeText(message)
+                    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                    msg_box.exec()
+                else:
+                    msg_box = QMessageBox(self.main_window)
+                    msg_box.setWindowTitle("❌ Errore Aggiornamento")
+                    msg_box.setIcon(QMessageBox.Icon.Critical)
+                    msg_box.setText("Errore durante l'aggiornamento")
+                    msg_box.setInformativeText(f"{message}\n\nL'applicazione continuerà a funzionare con la versione corrente.")
+                    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                    msg_box.exec()
 
         except Exception as e:
             logger.error(f"Error applying GitHub update: {e}", exc_info=True)

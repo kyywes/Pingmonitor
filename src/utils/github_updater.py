@@ -297,6 +297,22 @@ class GitHubUpdater:
             logger.info("📦 APPLYING GITHUB UPDATES...")
             logger.info("=" * 70)
 
+            # Check write permissions BEFORE attempting update
+            if not self._has_write_permission():
+                msg = (
+                    "PERMESSI INSUFFICIENTI\n\n"
+                    "L'applicazione è installata in 'Program Files' e richiede "
+                    "privilegi di amministratore per l'aggiornamento.\n\n"
+                    "Come procedere:\n"
+                    "1. Chiudi PingMonitor\n"
+                    "2. Fai click destro su 'PingMonitor' nel menu Start\n"
+                    "3. Seleziona 'Esegui come amministratore'\n"
+                    "4. L'update verrà applicato automaticamente\n\n"
+                    "OPPURE reinstalla usando il setup sul desktop."
+                )
+                logger.warning(msg)
+                return False, msg
+
             temp_dir = Path(details.get("temp_dir", self.temp_dir))
 
             if not temp_dir.exists():
@@ -369,6 +385,23 @@ class GitHubUpdater:
                 return False, f"{msg} (rolled back successfully)"
             else:
                 return False, f"{msg} (rollback failed - manual intervention needed)"
+
+    def _has_write_permission(self) -> bool:
+        """
+        Check if we have write permission to src directory
+
+        Returns:
+            True if we can write, False otherwise
+        """
+        try:
+            # Try to create a temporary test file
+            test_file = self.src_dir / ".write_test_temp"
+            test_file.write_text("test")
+            test_file.unlink()  # Delete test file
+            return True
+        except (PermissionError, OSError) as e:
+            logger.warning(f"No write permission to {self.src_dir}: {e}")
+            return False
 
     def _create_backup(self) -> Path:
         """
