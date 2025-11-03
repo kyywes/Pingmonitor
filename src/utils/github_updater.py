@@ -190,7 +190,14 @@ class GitHubUpdater:
 
             # Pulisci directory temporanea se esiste
             if self.temp_dir.exists():
-                shutil.rmtree(self.temp_dir)
+                try:
+                    shutil.rmtree(self.temp_dir)
+                except PermissionError:
+                    # On Windows, git files might be locked - try with ignore_errors
+                    logger.warning(f"Permission error removing {self.temp_dir}, retrying with ignore_errors")
+                    shutil.rmtree(self.temp_dir, ignore_errors=True)
+                except Exception as e:
+                    logger.warning(f"Error removing temp dir: {e}, continuing anyway")
 
             # Crea directory temporanea
             self.temp_dir.mkdir(parents=True, exist_ok=True)
