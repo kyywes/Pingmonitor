@@ -1,5 +1,5 @@
 """
-PingMonitor Pro v2.0 - Enhanced Main Window
+PingMonitor v2.3 - Enhanced Main Window
 Complete integration of all advanced features
 """
 
@@ -97,7 +97,7 @@ class MainWindowV2(QMainWindow):
 
     def _setup_window(self):
         """Setup main window properties"""
-        self.setWindowTitle("PingMonitor Pro v2.3 - Monitoraggio Professionale Rete PAI-PL")
+        self.setWindowTitle("PingMonitor - Monitoraggio Professionale Rete PAI-PL")
 
         # Load icon if available
         icon_path = Path(__file__).parent.parent.parent / "icon.ico"
@@ -448,7 +448,7 @@ class MainWindowV2(QMainWindow):
         title_layout.setSpacing(5)
         title_layout.setContentsMargins(0, 0, 0, 0)
 
-        title = QLabel("🌐 PingMonitor Pro v2.3")
+        title = QLabel("🌐 PingMonitor")
         title.setStyleSheet("font-size: 26px; font-weight: 700; color: white; letter-spacing: -0.5px;")
         title_layout.addWidget(title)
 
@@ -751,7 +751,7 @@ class MainWindowV2(QMainWindow):
                 painter.end()
                 self.tray_icon.setIcon(QIcon(pixmap))
 
-            self.tray_icon.setToolTip("PingMonitor Pro v2.0")
+            self.tray_icon.setToolTip("PingMonitor v2.3")
 
             # Create menu
             tray_menu = QMenu()
@@ -1259,8 +1259,8 @@ class MainWindowV2(QMainWindow):
 
     def _show_about(self):
         """Show about dialog"""
-        QMessageBox.about(self, "About PingMonitor Pro",
-                          "<h2>PingMonitor Pro v2.0</h2>"
+        QMessageBox.about(self, "About PingMonitor",
+                          "<h2>PingMonitor v2.3</h2>"
                           "<p>Professional Network Monitoring Solution with Advanced Features</p>"
                           "<p><b>Created by:</b> Fabrizio Cerchia</p>"
                           "<p><b>New Features:</b></p>"
@@ -1276,7 +1276,7 @@ class MainWindowV2(QMainWindow):
     def quit_application(self):
         """Force quit application (from tray Exit)"""
         reply = QMessageBox.question(self, "Conferma Uscita",
-                                     "Sei sicuro di voler uscire da PingMonitor Pro?",
+                                     "Sei sicuro di voler uscire da PingMonitor?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
 
         if reply == QMessageBox.StandardButton.Yes:
@@ -1310,7 +1310,7 @@ class MainWindowV2(QMainWindow):
             self.hide()
             if hasattr(self, 'tray_icon'):
                 self.tray_icon.showMessage(
-                    "PingMonitor Pro",
+                    "PingMonitor",
                     "Applicazione minimizzata nella tray",
                     QSystemTrayIcon.MessageIcon.Information,
                     2000

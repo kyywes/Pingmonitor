@@ -92,7 +92,7 @@ class AggregatedEmailService:
             msg = MIMEMultipart('alternative')
             msg['From'] = self.email_config.get('from_email', 'pingmonitor@localhost')
             msg['To'] = ', '.join(recipients)
-            msg['Subject'] = f"PingMonitor Pro - Report Recupero Dispositivi PAI-PL ({datetime.now().strftime('%d/%m/%Y %H:%M')})"
+            msg['Subject'] = f"PingMonitor - Report Recupero Dispositivi PAI-PL ({datetime.now().strftime('%d/%m/%Y %H:%M')})"
 
             # Create email body
             html_body = self._create_email_body()
@@ -238,7 +238,7 @@ class AggregatedEmailService:
         # Footer
         html += """
     <div class="footer">
-        <p>🤖 Questo è un messaggio automatico generato da PingMonitor Pro v2.3</p>
+        <p>🤖 Questo è un messaggio automatico generato da PingMonitor v2.3</p>
         <p>Per ulteriori informazioni, consultare il dashboard del sistema di monitoraggio.</p>
     </div>
 </body>

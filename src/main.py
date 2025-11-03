@@ -1,5 +1,5 @@
 """
-PingMonitor Pro v2.0 - Main Application
+PingMonitor v2.3 - Main Application
 Professional Network Monitoring Solution
 by Fabrizio Cerchia
 """
@@ -81,7 +81,7 @@ class PingMonitorApp:
         )
 
         logger.info("="*60)
-        logger.info("PingMonitor Pro v2.0 - Starting")
+        logger.info("PingMonitor v2.3 - Starting")
         logger.info("by Fabrizio Cerchia")
         logger.info("="*60)
 
@@ -384,7 +384,7 @@ def main():
 
         # Create QApplication ONCE
         qt_app = QApplication(sys.argv)
-        qt_app.setApplicationName("PingMonitor Pro")
+        qt_app.setApplicationName("PingMonitor")
         qt_app.setOrganizationName("Fabrizio Cerchia")
         qt_app.setApplicationVersion("2.3.0")
 
@@ -405,8 +405,8 @@ def main():
             # Instance already running
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("PingMonitor Pro - Already Running")
-            msg.setText("PingMonitor Pro is already running!")
+            msg.setWindowTitle("PingMonitor - Already Running")
+            msg.setText("PingMonitor is already running!")
             msg.setInformativeText("Only one instance can run at a time.\n\nPlease check the system tray.")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()
@@ -417,8 +417,8 @@ def main():
             # Failed to create (probably already exists)
             msg = QMessageBox()
             msg.setIcon(QMessageBox.Icon.Warning)
-            msg.setWindowTitle("PingMonitor Pro - Already Running")
-            msg.setText("PingMonitor Pro is already running!")
+            msg.setWindowTitle("PingMonitor - Already Running")
+            msg.setText("PingMonitor is already running!")
             msg.setInformativeText("Only one instance can run at a time.\n\nPlease check the system tray.")
             msg.setStandardButtons(QMessageBox.StandardButton.Ok)
             msg.exec()

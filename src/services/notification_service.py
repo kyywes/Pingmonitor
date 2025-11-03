@@ -1,5 +1,5 @@
 """
-PingMonitor Pro v2.3 - Advanced Notification Service
+PingMonitor v2.3 - Advanced Notification Service
 Multi-channel alerts (Email, Telegram) with intelligent auto-recovery logic
 """
 
@@ -309,7 +309,7 @@ class NotificationService:
                     </div>
 
                     <div class="footer">
-                        <p><strong>PingMonitor Pro v2.3</strong></p>
+                        <p><strong>PingMonitor v2.3</strong></p>
                         <p>Monitoraggio di Rete Automatico con Recupero Intelligente</p>
                         <p>Questa allerta è stata inviata perché il recupero automatico è fallito</p>
                         <p style="margin-top: 10px; color: #dc2626;">

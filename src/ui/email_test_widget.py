@@ -1,5 +1,5 @@
 """
-PingMonitor Pro v2.0 - Email Alert Test Widget
+PingMonitor v2.0 - Email Alert Test Widget
 Widget to test email alert functionality
 """
 
@@ -60,10 +60,10 @@ class EmailTestWorker(QThread):
             msg['To'] = to_email
 
             if self.test_type == 'simple':
-                msg['Subject'] = "PingMonitor Pro - Email di Test"
+                msg['Subject'] = "PingMonitor - Email di Test"
                 body = self._create_simple_test_email()
             else:
-                msg['Subject'] = "[TEST] PingMonitor Pro - Test Allerta Critica"
+                msg['Subject'] = "[TEST] PingMonitor - Test Allerta Critica"
                 body = self._create_full_alert_test()
 
             msg.attach(MIMEText(body, 'html'))
@@ -114,8 +114,8 @@ class EmailTestWorker(QThread):
             <h1>✅ Test Email Riuscito</h1>
         </div>
         <div class="content">
-            <p class="success">Sistema Email PingMonitor Pro Funzionante!</p>
-            <p>Questa è una email di test da <strong>PingMonitor Pro v2.3</strong>.</p>
+            <p class="success">Sistema Email PingMonitor Funzionante!</p>
+            <p>Questa è una email di test da <strong>PingMonitor v2.3</strong>.</p>
             <p>Se hai ricevuto questa email, significa che il sistema di allerte email è configurato correttamente.</p>
             <p><strong>Dettagli Test:</strong></p>
             <ul>
@@ -125,7 +125,7 @@ class EmailTestWorker(QThread):
             </ul>
         </div>
         <div class="footer">
-            PingMonitor Pro v2.3 - Monitoraggio di Rete Professionale<br>
+            PingMonitor v2.3 - Monitoraggio di Rete Professionale<br>
             by Fabrizio Cerchia
         </div>
     </div>
@@ -193,7 +193,7 @@ class EmailTestWorker(QThread):
 
         <div class="footer">
             <p><strong>Questa è una email di TEST</strong></p>
-            <p>PingMonitor Pro v2.3 - Monitoraggio di Rete Professionale<br>
+            <p>PingMonitor v2.3 - Monitoraggio di Rete Professionale<br>
             by Fabrizio Cerchia</p>
         </div>
     </div>
