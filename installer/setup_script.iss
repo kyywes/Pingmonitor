@@ -48,8 +48,8 @@ Source: "..\PingMonitorPro.pyw"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\icon.png"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\GUIDA_INSTALLAZIONE_PROFESSIONALE.txt"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\FIX_FINALE_EMAIL_E_INSTALLAZIONE.txt"; DestDir: "{app}"; Flags: ignoreversion
+; Source: "..\GUIDA_INSTALLAZIONE_PROFESSIONALE.txt"; DestDir: "{app}"; Flags: ignoreversion - REMOVED (file deleted)
+; Source: "..\FIX_FINALE_EMAIL_E_INSTALLAZIONE.txt"; DestDir: "{app}"; Flags: ignoreversion - REMOVED (file deleted)
 
 ; Source code
 Source: "..\src\*"; DestDir: "{app}\src"; Flags: ignoreversion recursesubdirs createallsubdirs
