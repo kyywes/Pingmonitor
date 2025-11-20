@@ -122,6 +122,11 @@ class PingMonitorApp:
             self.monitoring_engine.set_auto_recovery_service(self.main_window.auto_recovery_service)
             logger.info("Auto-recovery service connected to monitoring engine")
 
+        # Connect device reboot email service to monitoring engine
+        if hasattr(self.main_window, 'email_config'):
+            self.monitoring_engine.set_device_reboot_email_service(self.main_window.email_config)
+            logger.info("Device reboot email service connected to monitoring engine")
+
         # Show auto-sync notification if devices were updated
         if hasattr(self, '_auto_sync_updated') and self._auto_sync_updated:
             self.main_window.status_bar.showMessage(
