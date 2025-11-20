@@ -15,8 +15,17 @@ import logging
 from ..models.device import Device
 from ..models.check_result import CheckResult, CheckType
 from ..models.base import db_manager
+from ..utils.timezone_helper import get_local_now, local_to_utc
 
 logger = logging.getLogger(__name__)
+
+# Import device reboot email service (optional)
+try:
+    from ..services.device_reboot_email_service import DeviceRebootEmailService
+    REBOOT_EMAIL_AVAILABLE = True
+except ImportError:
+    REBOOT_EMAIL_AVAILABLE = False
+    logger.warning("DeviceRebootEmailService not available")
 
 
 class CheckTask:
@@ -26,7 +35,7 @@ class CheckTask:
         self.device = device
         self.check_type = check_type
         self.priority = priority
-        self.scheduled_time = datetime.utcnow()
+        self.scheduled_time = get_local_now()
         self.retry_count = 0
 
     def __lt__(self, other):
@@ -78,6 +87,7 @@ class MonitoringEngine:
 
         self.auto_recovery_service = None  # Set via set_auto_recovery_service()
         self.recovery_attempts = {}  # Track recovery attempts per device
+        self.device_reboot_email_service = None  # Set later if email config available
 
         logger.info(f"Monitoring engine initialized with {max_workers} workers")
 
@@ -102,6 +112,19 @@ class MonitoringEngine:
         self.auto_recovery_service = auto_recovery_service
         logger.info("Auto-recovery service set for monitoring engine")
 
+    def set_device_reboot_email_service(self, email_config: dict):
+        """
+        Set the device reboot email service
+
+        Args:
+            email_config: Email configuration dict
+        """
+        if REBOOT_EMAIL_AVAILABLE:
+            self.device_reboot_email_service = DeviceRebootEmailService(email_config)
+            logger.info("Device reboot email service initialized")
+        else:
+            logger.warning("Device reboot email service not available")
+
     def add_device(self, device: Device):
         """
         Add a device to monitoring
@@ -110,7 +133,7 @@ class MonitoringEngine:
             device: Device to monitor
         """
         self.devices[device.id] = device
-        self.last_check_times[device.id] = datetime.utcnow() - timedelta(hours=1)
+        self.last_check_times[device.id] = get_local_now() - timedelta(hours=1)
         logger.info(f"Device added to monitoring: {device.name} ({device.ip_address})")
 
     def remove_device(self, device_id: int):
@@ -212,7 +235,7 @@ class MonitoringEngine:
                     time.sleep(1)
                     continue
 
-                current_time = datetime.utcnow()
+                current_time = get_local_now()
 
                 # Schedule checks for all devices
                 for device in self.devices.values():
@@ -220,7 +243,17 @@ class MonitoringEngine:
                         continue
 
                     last_check = self.last_check_times.get(device.id)
-                    check_interval = timedelta(seconds=device.check_interval)
+
+                    # REAL-TIME CHECK for degraded/offline devices:
+                    # - Degraded devices: check every 30 seconds
+                    # - Offline devices: check every 60 seconds
+                    # - Online devices: use normal check_interval
+                    if device.current_status == 'degraded':
+                        check_interval = timedelta(seconds=30)  # Check degraded every 30s
+                    elif device.current_status == 'offline':
+                        check_interval = timedelta(seconds=60)  # Check offline every 60s
+                    else:
+                        check_interval = timedelta(seconds=device.check_interval)  # Normal interval
 
                     if last_check is None or (current_time - last_check) >= check_interval:
                         self._schedule_device_checks(device)
@@ -351,7 +384,7 @@ class MonitoringEngine:
             result['response_time'] = response_time
             result['check_type'] = check_type
             result['device_id'] = device.id
-            result['timestamp'] = datetime.utcnow().isoformat()
+            result['timestamp'] = get_local_now().isoformat()
 
             return result
 
@@ -362,7 +395,7 @@ class MonitoringEngine:
                 'error': str(e),
                 'check_type': check_type,
                 'device_id': device.id,
-                'timestamp': datetime.utcnow().isoformat(),
+                'timestamp': get_local_now().isoformat(),
                 'response_time': (time.time() - start_time) * 1000
             }
 
@@ -505,7 +538,7 @@ class MonitoringEngine:
         """
         logger.warning(f"Status change for {device.name}: {old_status} → {new_status}")
 
-        device.last_status_change = datetime.utcnow().isoformat()
+        device.last_status_change = get_local_now().isoformat()
 
         # Trigger callbacks
         for callback in self.callbacks.get('on_status_change', []):
@@ -538,7 +571,7 @@ class MonitoringEngine:
             'device': device,
             'old_status': old_status,
             'new_status': new_status,
-            'timestamp': datetime.utcnow()
+            'timestamp': get_local_now()
         }
 
         for callback in self.callbacks.get('on_alert', []):
@@ -561,13 +594,13 @@ class MonitoringEngine:
 
             if last_attempt:
                 # Cooldown of 5 minutes between recovery attempts
-                time_since_last = (datetime.utcnow() - last_attempt).total_seconds()
+                time_since_last = (get_local_now() - last_attempt).total_seconds()
                 if time_since_last < 300:  # 5 minutes
                     logger.info(f"Recovery cooldown active for {device.name} - skipping (last attempt {int(time_since_last)}s ago)")
                     return
 
             # Record attempt
-            self.recovery_attempts[device_key] = datetime.utcnow()
+            self.recovery_attempts[device_key] = get_local_now()
 
             # Attempt recovery
             logger.info(f"Attempting SSH recovery for {device.name} ({device.ip_address})")
@@ -581,7 +614,7 @@ class MonitoringEngine:
                 device.recovery_results = []
 
             device.recovery_results.append({
-                'timestamp': datetime.utcnow(),
+                'timestamp': get_local_now(),
                 'success': success,
                 'message': message
             })
@@ -590,6 +623,27 @@ class MonitoringEngine:
                 logger.info(f"Recovery successful for {device.name}: {message}")
                 device.recovery_success = True
                 device.requires_manual_intervention = False
+
+                # Send individual device reboot email
+                if self.device_reboot_email_service:
+                    try:
+                        device_info = {
+                            'name': device.name,
+                            'ip': device.ip_address,
+                            'location': getattr(device, 'location', 'N/A')
+                        }
+                        recovery_log = self.auto_recovery_service.get_recovery_log(device.ip_address)
+                        if recovery_log:
+                            email_success, email_msg = self.device_reboot_email_service.send_reboot_notification(
+                                device_info, recovery_log
+                            )
+                            if email_success:
+                                logger.info(f"Email reboot inviata per {device.name}")
+                            else:
+                                logger.warning(f"Errore invio email reboot per {device.name}: {email_msg}")
+                    except Exception as e:
+                        logger.error(f"Errore invio email reboot: {e}")
+
                 # Trigger callback
                 for callback in self.callbacks.get('on_recovery_success', []):
                     try:
@@ -624,7 +678,7 @@ class MonitoringEngine:
             'check_type': task.check_type,
             'success': False,
             'error': error,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': get_local_now().isoformat(),
             'response_time': 0
         }
 

@@ -758,3 +758,406 @@ QSplitter::handle:horizontal {
 QSplitter::handle:vertical {
     height: 2px;
 }
+
+/* ========================================
+   CUSTOM STATUS INDICATORS (Modern)
+   ======================================== */
+
+/* Status Badge - Online/Success */
+QLabel[class="status-online"],
+QFrame[class="status-online"] {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 16px;
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* Status Badge - Offline/Error */
+QLabel[class="status-offline"],
+QFrame[class="status-offline"] {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 16px;
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* Status Badge - Degraded/Warning */
+QLabel[class="status-degraded"],
+QLabel[class="status-warning"],
+QFrame[class="status-degraded"],
+QFrame[class="status-warning"] {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 16px;
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* Status Badge - Info */
+QLabel[class="status-info"],
+QFrame[class="status-info"] {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 16px;
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+/* ========================================
+   MODERN METRIC CARDS
+   ======================================== */
+
+QFrame[class="metric-card"] {
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+QFrame[class="metric-card-success"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(16, 185, 129, 0.1),
+        stop:1 rgba(16, 185, 129, 0.05)
+    );
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+QFrame[class="metric-card-error"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(239, 68, 68, 0.1),
+        stop:1 rgba(239, 68, 68, 0.05)
+    );
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+QFrame[class="metric-card-warning"] {
+    background: qlineargradient(
+        x1:0, y1:0, x2:0, y2:1,
+        stop:0 rgba(245, 158, 11, 0.1),
+        stop:1 rgba(245, 158, 11, 0.05)
+    );
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 12px;
+    padding: 20px;
+}
+
+/* Metric Value Labels */
+QLabel[class="metric-value"] {
+    font-size: 36px;
+    font-weight: 700;
+    color: #f8fafc;
+    background: transparent;
+}
+
+QLabel[class="metric-label"] {
+    font-size: 13px;
+    font-weight: 500;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+/* ========================================
+   MODERN DATA VISUALIZATION
+   ======================================== */
+
+/* Chart Container */
+QFrame[class="chart-container"] {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    padding: 16px;
+}
+
+/* Legend */
+QLabel[class="legend-item"] {
+    font-size: 12px;
+    color: #cbd5e1;
+    padding: 4px 8px;
+    background: transparent;
+}
+
+/* ========================================
+   ALERT BANNERS
+   ======================================== */
+
+QFrame[class="alert-success"] {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-left: 4px solid #10b981;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+QFrame[class="alert-error"] {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-left: 4px solid #ef4444;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+QFrame[class="alert-warning"] {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-left: 4px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+QFrame[class="alert-info"] {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+/* ========================================
+   MODERN BUTTONS WITH HOVER EFFECTS
+   ======================================== */
+
+QPushButton[class="icon-button"] {
+    background-color: transparent;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
+}
+
+QPushButton[class="icon-button"]:hover {
+    background-color: rgba(99, 102, 241, 0.1);
+    border-color: #6366f1;
+}
+
+QPushButton[class="icon-button"]:pressed {
+    background-color: rgba(99, 102, 241, 0.2);
+}
+
+/* ========================================
+   MODERN DEVICE TABLE ENHANCEMENTS
+   ======================================== */
+
+QTableWidget[class="device-table"] {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    gridline-color: transparent;
+}
+
+QTableWidget[class="device-table"]::item {
+    padding: 16px 12px;
+    border-bottom: 1px solid #1e293b;
+}
+
+QTableWidget[class="device-table"]::item:selected {
+    background-color: rgba(99, 102, 241, 0.1);
+    border-left: 3px solid #6366f1;
+}
+
+/* ========================================
+   PREMIUM SHADOWS & EFFECTS
+   ======================================== */
+
+QFrame[class="shadow-sm"] {
+    /* Simulated shadow effect via border */
+    border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+QFrame[class="shadow-md"] {
+    border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+QFrame[class="shadow-lg"] {
+    border: 2px solid rgba(0, 0, 0, 0.4);
+}
+
+/* ========================================
+   PREMIUM TYPOGRAPHY
+   ======================================== */
+
+QLabel[class="title"] {
+    font-size: 28px;
+    font-weight: 700;
+    color: #f8fafc;
+    background: transparent;
+}
+
+QLabel[class="subtitle"] {
+    font-size: 16px;
+    font-weight: 500;
+    color: #94a3b8;
+    background: transparent;
+}
+
+QLabel[class="caption"] {
+    font-size: 11px;
+    font-weight: 400;
+    color: #64748b;
+    background: transparent;
+}
+
+QLabel[class="mono"] {
+    font-family: 'JetBrains Mono', 'SF Mono', Monaco, Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    color: #10b981;
+    background: transparent;
+}
+
+/* ========================================
+   GLASSMORPHISM EFFECTS
+   ======================================== */
+
+QFrame[class="glass"] {
+    background-color: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+}
+
+/* ========================================
+   DIVIDERS
+   ======================================== */
+
+QFrame[class="divider-horizontal"] {
+    background-color: #334155;
+    max-height: 1px;
+    min-height: 1px;
+}
+
+QFrame[class="divider-vertical"] {
+    background-color: #334155;
+    max-width: 1px;
+    min-width: 1px;
+}
+
+/* ========================================
+   MODERN LIST WIDGET
+   ======================================== */
+
+QListWidget {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    background-color: transparent;
+    color: #cbd5e1;
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin: 2px 0;
+}
+
+QListWidget::item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+QListWidget::item:selected {
+    background-color: rgba(99, 102, 241, 0.15);
+    color: #6366f1;
+}
+
+/* ========================================
+   MODERN TREE WIDGET
+   ======================================== */
+
+QTreeWidget {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+QTreeWidget::item {
+    padding: 8px;
+    color: #cbd5e1;
+}
+
+QTreeWidget::item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+}
+
+QTreeWidget::item:selected {
+    background-color: rgba(99, 102, 241, 0.15);
+    color: #6366f1;
+    border-radius: 6px;
+}
+
+QTreeWidget::branch {
+    background-color: transparent;
+}
+
+/* ========================================
+   MODERN TAB BAR ENHANCEMENTS
+   ======================================== */
+
+QTabBar::tab[class="modern"] {
+    background-color: #1e293b;
+    color: #94a3b8;
+    padding: 12px 24px;
+    margin-right: 4px;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid transparent;
+}
+
+QTabBar::tab[class="modern"]:hover {
+    background-color: #334155;
+    color: #cbd5e1;
+}
+
+QTabBar::tab[class="modern"]:selected {
+    background-color: #0f172a;
+    color: #6366f1;
+    border: 1px solid #334155;
+    border-bottom-color: #0f172a;
+}
+
+/* ========================================
+   RESPONSIVE SPACING UTILITIES
+   ======================================== */
+
+QFrame[class="p-0"] { padding: 0px; }
+QFrame[class="p-1"] { padding: 4px; }
+QFrame[class="p-2"] { padding: 8px; }
+QFrame[class="p-3"] { padding: 12px; }
+QFrame[class="p-4"] { padding: 16px; }
+QFrame[class="p-5"] { padding: 20px; }
+QFrame[class="p-6"] { padding: 24px; }
+
+QFrame[class="m-0"] { margin: 0px; }
+QFrame[class="m-1"] { margin: 4px; }
+QFrame[class="m-2"] { margin: 8px; }
+QFrame[class="m-3"] { margin: 12px; }
+QFrame[class="m-4"] { margin: 16px; }
+QFrame[class="m-5"] { margin: 20px; }
+
+/* ========================================
+   LOADING SPINNER STYLE
+   ======================================== */
+
+QLabel[class="spinner"] {
+    background: transparent;
+    color: #6366f1;
+}
+
+/* ========================================
+   END OF STYLESHEET
+   ======================================== */

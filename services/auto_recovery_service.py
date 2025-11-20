@@ -85,8 +85,23 @@ class AutoRecoveryService:
             logger.info(f"{device_ip}: Running pre-reboot diagnostics...")
             diagnostics = self._run_diagnostics(client, device_ip)
 
-            # Step 3: Execute reboot command
-            logger.warning(f"{device_ip}: Executing REBOOT command...")
+            # Step 3: Check memory usage
+            logger.info(f"{device_ip}: Checking memory usage...")
+            high_memory, memory_percent = self._check_memory_usage(diagnostics)
+
+            # Decision logic:
+            # - If memory > 80%: REBOOT (memory issue)
+            # - If memory OK but web page not responding: REBOOT anyway (service issue)
+            reboot_reason = ""
+            if high_memory:
+                reboot_reason = f"Memoria alta ({memory_percent:.1f}% > 80%)"
+                logger.warning(f"{device_ip}: {reboot_reason} - REBOOT necessario")
+            else:
+                reboot_reason = f"Servizio web non risponde (memoria OK: {memory_percent:.1f}%)"
+                logger.warning(f"{device_ip}: {reboot_reason} - REBOOT necessario")
+
+            # Step 4: Execute reboot command
+            logger.warning(f"{device_ip}: Executing REBOOT command ({reboot_reason})...")
 
             try:
                 # Execute reboot (this will disconnect)
@@ -107,10 +122,13 @@ class AutoRecoveryService:
                     'time': datetime.now(),
                     'device_name': device_name,
                     'diagnostics': diagnostics,
+                    'memory_percent': memory_percent,
+                    'high_memory': high_memory,
+                    'reboot_reason': reboot_reason,
                     'reboot_sent': True
                 }
 
-                return True, f"Reboot command sent to {device_name}. Waiting 5 minutes for recovery..."
+                return True, f"Reboot inviato a {device_name} - Motivo: {reboot_reason}"
 
             except Exception as e:
                 # Reboot command often causes connection to close, which is expected
@@ -121,10 +139,13 @@ class AutoRecoveryService:
                         'time': datetime.now(),
                         'device_name': device_name,
                         'diagnostics': diagnostics,
+                        'memory_percent': memory_percent,
+                        'high_memory': high_memory,
+                        'reboot_reason': reboot_reason,
                         'reboot_sent': True
                     }
 
-                    return True, f"Reboot initiated for {device_name}"
+                    return True, f"Reboot iniziato per {device_name} - Motivo: {reboot_reason}"
                 else:
                     error_msg = f"{device_ip}: Reboot command failed: {str(e)}"
                     logger.error(error_msg)
@@ -160,6 +181,7 @@ class AutoRecoveryService:
         diagnostic_commands = {
             'uptime': 'uptime',
             'memory': 'free -h',
+            'memory_raw': 'free -m',  # For parsing
             'disk': 'df -h',
             'load_average': 'cat /proc/loadavg',
             'network': 'ip addr show',
@@ -175,6 +197,57 @@ class AutoRecoveryService:
                 logger.debug(f"{device_ip}: Diagnostic '{name}' failed: {e}")
 
         return diagnostics
+
+    def _check_memory_usage(self, diagnostics: dict) -> tuple[bool, float]:
+        """
+        Controlla l'utilizzo della memoria dal comando 'free'
+
+        Args:
+            diagnostics: Dizionario contenente output dei comandi diagnostici
+
+        Returns:
+            Tuple (memoria_alta, percentuale_utilizzo)
+            memoria_alta: True se memoria > 80%
+            percentuale_utilizzo: Percentuale di memoria utilizzata
+        """
+        try:
+            memory_output = diagnostics.get('memory_raw', '')
+
+            # Parse output di 'free -m'
+            # Example output:
+            #               total        used        free      shared  buff/cache   available
+            # Mem:           7953        3021        2154         234        2777        4367
+
+            lines = memory_output.strip().split('\n')
+            if len(lines) < 2:
+                logger.warning("Impossibile parsare output 'free -m'")
+                return False, 0.0
+
+            # Seconda riga contiene i dati memoria
+            mem_line = lines[1]
+            parts = mem_line.split()
+
+            if len(parts) < 3:
+                logger.warning(f"Formato 'free -m' non valido: {mem_line}")
+                return False, 0.0
+
+            # parts[1] = total, parts[2] = used
+            total_mem = float(parts[1])
+            used_mem = float(parts[2])
+
+            if total_mem == 0:
+                return False, 0.0
+
+            usage_percent = (used_mem / total_mem) * 100
+
+            logger.info(f"Utilizzo memoria: {usage_percent:.1f}% ({used_mem:.0f}MB / {total_mem:.0f}MB)")
+
+            # Soglia 80%
+            return usage_percent > 80.0, usage_percent
+
+        except Exception as e:
+            logger.error(f"Errore controllo memoria: {e}")
+            return False, 0.0
 
     def check_ssh_connectivity(self, device_ip: str) -> Tuple[bool, str]:
         """
