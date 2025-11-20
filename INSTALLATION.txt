@@ -1,0 +1,59 @@
+# PingMonitor Pro v2.0 - Installation
+
+## Quick Start
+
+1. **Run: PingMonitorPro.exe** (single file, no installation needed!)
+2. Application will start and load encrypted credentials
+3. Monitoring will begin automatically
+
+## First Run
+
+On first run, the application will:
+- Create database in: C:\Users\YourName\.pingmonitor\
+- Migrate credentials to encrypted storage
+- Load 14 devices from config
+
+## Note
+
+This is a **standalone executable** - all dependencies are included.
+No additional files or installation required!
+
+## Email Notifications (UPDATED 2025-11-16)
+
+Two types of email notifications:
+
+1. **Status Change Emails** (Immediate)
+   - Sent when device goes offline/degraded/recovered
+   - 5-minute cooldown to prevent spam
+   - Recipients: assistenza.paipl@eredimercuri.com, fabrizio.cerchia@eredimercuri.com
+
+2. **Periodic Status Reports** (Every 6 hours)
+   - Comprehensive device status report
+   - Shows offline and degraded devices
+   - Lists successful SSH recoveries
+   - Indicates devices requiring manual intervention
+
+## Utilities Included
+
+- **verify_email_config.py** - Verify email configuration
+- **uninstall_pingmonitor.py** - Complete or partial uninstall
+
+## Security Improvements
+
+✓ Credentials encrypted with AES-256
+✓ No plaintext passwords
+✓ Thread-safe operations
+✓ Proper worker cleanup
+
+## Documentation
+
+- FIXES_APPLIED_2025-11-16.md - All applied fixes
+- CODE_REVIEW_REPORT.md - Security analysis
+
+## Support
+
+For issues, check logs in: C:\Users\YourName\.pingmonitor\logs\
+
+Version: 2.0
+Build: 2025-11-16
+Email Timer: 6 hours (FIXED)
