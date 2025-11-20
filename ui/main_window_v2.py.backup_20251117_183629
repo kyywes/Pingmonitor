@@ -1,0 +1,1834 @@
+"""
+PingMonitor Pro v2.0 - Enhanced Main Window
+Complete integration of all advanced features
+"""
+
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
+    QLabel, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
+    QSystemTrayIcon, QMenu, QMessageBox, QStatusBar, QProgressBar,
+    QFileDialog, QInputDialog
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QPoint, QThread
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QBrush, QColor, QAction, QCursor
+from datetime import datetime, timedelta
+import subprocess
+import webbrowser
+from pathlib import Path
+import logging
+
+from .ssh_terminal import SSHTerminal
+from .email_test_widget import EmailTestWidget
+from .telegram_test_widget import TelegramTestWidget
+from .settings_widget import SettingsWidget
+from .logs_viewer import LogsViewer
+from .devices_manager import DevicesManager
+from .dashboard_widget import DashboardWidget
+from .components.status_indicator import StatusIndicatorCell
+from .design_system import DesignSystem
+from ..services.notification_service import NotificationService
+from ..services.auto_recovery_service import AutoRecoveryService
+from ..services.aggregated_email_service import AggregatedEmailService
+from ..services.export_service import ExportService
+from ..utils.config_importer import ConfigImporter
+from ..models.device import Device
+from ..models.check_result import CheckResult
+from ..models.base import db_manager
+import os
+
+logger = logging.getLogger(__name__)
+
+
+class SSHRebootWorker(QThread):
+    """Worker thread for SSH reboot operations to prevent UI freezing"""
+
+    # Signals
+    finished = pyqtSignal(bool, str)  # success, message
+    progress = pyqtSignal(str)  # progress message
+
+    def __init__(self, auto_recovery_service, device_ip, device_name):
+        super().__init__()
+        self.auto_recovery_service = auto_recovery_service
+        self.device_ip = device_ip
+        self.device_name = device_name
+
+    def run(self):
+        """Execute SSH reboot in background thread"""
+        try:
+            self.progress.emit(f"Connessione SSH a {self.device_name}...")
+            success, message = self.auto_recovery_service.attempt_recovery(
+                self.device_ip,
+                self.device_name
+            )
+            self.finished.emit(success, message)
+        except Exception as e:
+            logger.error(f"Error in SSH reboot worker: {e}", exc_info=True)
+            self.finished.emit(False, f"Errore: {str(e)}")
+
+
+class MainWindowV2(QMainWindow):
+    """Enhanced main application window with all advanced features"""
+
+    status_update_signal = pyqtSignal(dict)
+
+    def __init__(self, config, monitoring_engine):
+        super().__init__()
+
+        self.config = config
+        self.monitoring_engine = monitoring_engine
+
+        # Initialize advanced services
+        email_config = {}
+        ssh_config = {}
+
+        # Try to load from legacy config if available
+        legacy_config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+        if legacy_config_path.exists():
+            logger.info(f"Loading configuration from {legacy_config_path}")
+            _, email_config, ssh_config = ConfigImporter.import_from_legacy_config(legacy_config_path)
+            logger.info(f"Loaded email_config: {bool(email_config)}, ssh_config: {bool(ssh_config)}")
+        else:
+            logger.warning(f"Legacy config not found at {legacy_config_path}")
+
+        # DEFAULT SSH CONFIG - Essential for auto-recovery to work
+        default_ssh_config = {
+            'enabled': True,
+            'username': 'root',
+            'password': 'p4ssw0rd.355',  # Default password for PAI-PL devices
+            'port': 22,
+            'timeout': 10,
+            'recovery_attempts': 3,
+            'cooldown': 300  # 5 minutes between recovery attempts
+        }
+
+        # Use default SSH config if not loaded or disabled
+        if not ssh_config or not ssh_config.get('enabled'):
+            logger.warning("SSH config not found or disabled - using default SSH config for auto-recovery")
+            ssh_config = default_ssh_config
+        else:
+            # Merge with defaults to ensure all required fields exist
+            ssh_config = {**default_ssh_config, **ssh_config}
+            logger.info(f"SSH config loaded successfully: username={ssh_config.get('username')}, enabled={ssh_config.get('enabled')}")
+
+        self.notification_service = NotificationService()
+        self.auto_recovery_service = AutoRecoveryService(ssh_config)
+        self.aggregated_email_service = AggregatedEmailService(email_config)
+
+        self.email_config = email_config
+        self.ssh_config = ssh_config
+
+        logger.info(f"Auto-recovery service initialized with SSH: enabled={ssh_config.get('enabled')}, username={ssh_config.get('username')}")
+
+        # IMPORTANT: Pass auto_recovery_service to monitoring_engine
+        self.monitoring_engine.set_auto_recovery_service(self.auto_recovery_service)
+        logger.info("Auto-recovery service registered with monitoring engine")
+
+        # Device tracking for recovery
+        self.device_recovery_status = {}
+
+        # Setup UI
+        self._setup_window()
+        self._create_menu_bar()
+        self._create_toolbar()
+        self._create_central_widget()
+        self._create_status_bar()
+        self._create_system_tray()
+
+        # Setup monitoring callbacks
+        self.monitoring_engine.register_callback('on_check_complete', self._on_check_complete)
+        self.monitoring_engine.register_callback('on_status_change', self._on_device_status_change)
+        self.monitoring_engine.register_callback('on_recovery_success', self._on_recovery_success)
+        self.monitoring_engine.register_callback('on_recovery_failure', self._on_recovery_failure)
+
+        # Setup update timer (500ms for more responsive UI)
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self._update_ui)
+        self.update_timer.start(500)  # 500ms = 2 updates per second for real-time feel
+
+        # Setup aggregated email timer (6-hour report)
+        self.email_aggregate_timer = QTimer()
+        self.email_aggregate_timer.timeout.connect(self._send_aggregated_email)
+        self.email_aggregate_timer.start(21600000)  # 6 hours = 21600000 ms (6 ore × 60 min × 60 sec × 1000 ms)
+
+        # Log timer initialization
+        if self.email_config and self.email_config.get('smtp_server'):
+            recipients = self.aggregated_email_service._get_recipients()
+            logger.info("=" * 80)
+            logger.info("AGGREGATED EMAIL SERVICE INITIALIZED")
+            logger.info(f"Timer interval: 6 hours (21,600,000 ms)")
+            logger.info(f"Next report scheduled in: 6 hours")
+            logger.info(f"Recipients: {recipients}")
+            logger.info(f"SMTP Server: {self.email_config.get('smtp_server')} : {self.email_config.get('smtp_port')}")
+            logger.info("=" * 80)
+        else:
+            logger.warning("=" * 80)
+            logger.warning("EMAIL CONFIG MISSING - Aggregated email reports DISABLED")
+            logger.warning("Configure email settings in the Settings tab to enable reports")
+            logger.warning("=" * 80)
+
+        # Auto-import devices from legacy config
+        self._auto_import_devices()
+
+        # Test SSH connectivity with first available device
+        self._test_ssh_connectivity()
+
+        # Auto-start monitoring
+        QTimer.singleShot(1000, self.start_monitoring)  # Start after 1 second
+
+        logger.info("Enhanced main window initialized")
+
+    def _setup_window(self):
+        """Setup main window properties"""
+        self.setWindowTitle("PingMonitor Pro v2.3 - Monitoraggio Professionale Rete PAI-PL")
+
+        # Load icon if available
+        icon_path = Path(__file__).parent.parent.parent / "icon.ico"
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
+        geometry = self.config.get('ui.window_geometry', {})
+        width = geometry.get('width', 1600)
+        height = geometry.get('height', 900)
+
+        self.resize(width, height)
+
+        screen = self.screen().geometry()
+        x = (screen.width() - width) // 2
+        y = (screen.height() - height) // 2
+        self.move(x, y)
+
+    def _create_menu_bar(self):
+        """Create enhanced menu bar"""
+        menubar = self.menuBar()
+
+        # File menu
+        file_menu = menubar.addMenu("&File")
+
+        import_devices_action = QAction("&Importa Dispositivi da Config.json", self)
+        import_devices_action.triggered.connect(self._import_devices_dialog)
+        file_menu.addAction(import_devices_action)
+
+        # Export submenu
+        export_menu = file_menu.addMenu("&Esporta")
+
+        export_devices_action = QAction("Esporta Dispositivi (CSV)", self)
+        export_devices_action.triggered.connect(self._export_devices_csv)
+        export_menu.addAction(export_devices_action)
+
+        export_report_action = QAction("Esporta Report Completo (CSV)", self)
+        export_report_action.triggered.connect(self._export_monitoring_report)
+        export_menu.addAction(export_report_action)
+
+        export_checks_action = QAction("Esporta Check Results (CSV)", self)
+        export_checks_action.triggered.connect(self._export_check_results)
+        export_menu.addAction(export_checks_action)
+
+        file_menu.addSeparator()
+
+        exit_action = QAction("E&sci", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # View menu
+        view_menu = menubar.addMenu("&View")
+
+        fullscreen_action = QAction("&Schermo Intero", self)
+        fullscreen_action.setShortcut("F11")
+        fullscreen_action.triggered.connect(self._toggle_fullscreen)
+        view_menu.addAction(fullscreen_action)
+
+        # Tools menu
+        tools_menu = menubar.addMenu("&Tools")
+
+        settings_action = QAction("&Impostazioni", self)
+        settings_action.setShortcut("Ctrl+,")
+        settings_action.triggered.connect(self._show_settings)
+        tools_menu.addAction(settings_action)
+
+        ssh_terminal_action = QAction("Terminale &SSH", self)
+        ssh_terminal_action.setShortcut("Ctrl+T")
+        ssh_terminal_action.triggered.connect(self._show_ssh_terminal)
+        tools_menu.addAction(ssh_terminal_action)
+
+        # Help menu
+        help_menu = menubar.addMenu("&Help")
+
+        about_action = QAction("&Informazioni", self)
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
+
+    def _create_toolbar(self):
+        """Create enhanced toolbar"""
+        toolbar = self.addToolBar("Main Toolbar")
+        toolbar.setMovable(False)
+
+        # Start button
+        self.btn_start = QPushButton("Avvia Monitoraggio")
+        self.btn_start.clicked.connect(self.start_monitoring)
+        self.btn_start.setStyleSheet("""
+            QPushButton {
+                background-color: #10b981;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+            QPushButton:hover {
+                background-color: #059669;
+                padding: 12px 28px;
+            }
+            QPushButton:pressed {
+                background-color: #047857;
+                padding: 12px 24px;
+            }
+        """)
+        toolbar.addWidget(self.btn_start)
+
+        # Stop button
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.clicked.connect(self.stop_monitoring)
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.setStyleSheet("""
+            QPushButton {
+                background-color: #ef4444;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+            QPushButton:hover {
+                background-color: #dc2626;
+                padding: 12px 28px;
+            }
+            QPushButton:pressed {
+                background-color: #b91c1c;
+                padding: 12px 24px;
+            }
+            QPushButton:disabled {
+                background-color: #6b7280;
+                color: #9ca3af;
+            }
+        """)
+        toolbar.addWidget(self.btn_stop)
+
+        toolbar.addSeparator()
+
+        # Refresh button
+        btn_refresh = QPushButton("Aggiorna")
+        btn_refresh.clicked.connect(self._refresh_data)
+        btn_refresh.setStyleSheet("""
+            QPushButton {
+                background-color: #3b82f6;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+            QPushButton:hover {
+                background-color: #2563eb;
+                padding: 12px 28px;
+            }
+            QPushButton:pressed {
+                background-color: #1d4ed8;
+                padding: 12px 24px;
+            }
+        """)
+        toolbar.addWidget(btn_refresh)
+
+        # Check Now button - Instant monitoring check
+        btn_check_now = QPushButton("Check Now")
+        btn_check_now.clicked.connect(self._check_now)
+        btn_check_now.setStyleSheet("""
+            QPushButton {
+                background-color: #f59e0b;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+            QPushButton:hover {
+                background-color: #d97706;
+                padding: 12px 28px;
+            }
+            QPushButton:pressed {
+                background-color: #b45309;
+                padding: 12px 24px;
+            }
+        """)
+        toolbar.addWidget(btn_check_now)
+
+        toolbar.addSeparator()
+
+        # Add device button
+        btn_add_device = QPushButton("Aggiungi Dispositivo")
+        btn_add_device.clicked.connect(self._add_device)
+        btn_add_device.setStyleSheet("""
+            QPushButton {
+                background-color: #8b5cf6;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+            QPushButton:hover {
+                background-color: #7c3aed;
+                padding: 12px 28px;
+            }
+            QPushButton:pressed {
+                background-color: #6d28d9;
+                padding: 12px 24px;
+            }
+        """)
+        toolbar.addWidget(btn_add_device)
+
+        # SSH Terminal button
+        btn_ssh = QPushButton("Terminale SSH")
+        btn_ssh.clicked.connect(self._show_ssh_terminal)
+        btn_ssh.setStyleSheet("""
+            QPushButton {
+                background-color: #6366f1;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                font-size: 14px;
+                font-weight: bold;
+                border-radius: 6px;
+                transition: all 0.3s ease;
+            }
+            QPushButton:hover {
+                background-color: #4f46e5;
+                padding: 12px 28px;
+            }
+            QPushButton:pressed {
+                background-color: #4338ca;
+                padding: 12px 24px;
+            }
+        """)
+        toolbar.addWidget(btn_ssh)
+
+    def _create_central_widget(self):
+        """Create central widget with enhanced tabs"""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        layout = QVBoxLayout(central_widget)
+
+        # Header with statistics
+        header = self._create_header()
+        layout.addWidget(header)
+
+        # Tab widget with modern styling
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                background-color: rgba(15, 20, 25, 0.5);
+                border-radius: 8px;
+                margin-top: -1px;
+            }
+            QTabBar::tab {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(30, 41, 59, 0.8),
+                    stop:1 rgba(15, 20, 25, 0.9));
+                color: #94a3b8;
+                padding: 12px 24px;
+                margin-right: 4px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                border: 1px solid rgba(148, 163, 184, 0.1);
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QTabBar::tab:selected {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2563eb,
+                    stop:1 #1e40af);
+                color: white;
+                border-bottom: 3px solid #60a5fa;
+                font-weight: 600;
+            }
+            QTabBar::tab:hover:!selected {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 rgba(37, 99, 235, 0.3),
+                    stop:1 rgba(30, 64, 175, 0.4));
+                color: #e2e8f0;
+            }
+        """)
+
+        # Dashboard tab (nuovo)
+        self.dashboard = DashboardWidget()
+        self.dashboard.set_monitoring_engine(self.monitoring_engine)
+        self.tab_widget.addTab(self.dashboard, "Dashboard")
+
+        # Monitoring tab
+        self.monitoring_tab = self._create_monitoring_tab()
+        self.tab_widget.addTab(self.monitoring_tab, "Monitoraggio")
+
+        # SSH Terminal tab
+        self.ssh_terminal = SSHTerminal()
+        self.tab_widget.addTab(self.ssh_terminal, "Terminale SSH")
+
+        # Email Test tab
+        self.email_test_widget = EmailTestWidget(self.email_config)
+        self.tab_widget.addTab(self.email_test_widget, "Test Email")
+
+        # Telegram Test tab
+        telegram_config = {}  # Will be loaded from settings
+        self.telegram_test_widget = TelegramTestWidget(telegram_config)
+        self.tab_widget.addTab(self.telegram_test_widget, "Test Telegram")
+
+        # Settings tab
+        self.settings_widget = SettingsWidget()
+        self.settings_widget.settings_changed.connect(self._on_settings_changed)
+        self.tab_widget.addTab(self.settings_widget, "Impostazioni")
+
+        # Devices tab
+        self.devices_tab = self._create_devices_tab()
+        self.tab_widget.addTab(self.devices_tab, "Dispositivi")
+
+        # Logs tab
+        self.logs_tab = self._create_logs_tab()
+        self.tab_widget.addTab(self.logs_tab, "Log")
+
+        layout.addWidget(self.tab_widget)
+
+    def _create_header(self):
+        """Create enhanced header with modern design"""
+        header = QWidget()
+        header.setStyleSheet("""
+            QWidget {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #1e3a8a, stop:0.5 #2563eb, stop:1 #3b82f6);
+                border-radius: 12px;
+                padding: 20px;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+            }
+        """)
+
+        layout = QHBoxLayout(header)
+        layout.setSpacing(30)
+
+        # Title section
+        title_container = QWidget()
+        title_layout = QVBoxLayout(title_container)
+        title_layout.setSpacing(5)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+
+        title = QLabel("PingMonitor")
+        title.setStyleSheet("font-size: 26px; font-weight: 700; color: white; letter-spacing: -0.5px;")
+        title_layout.addWidget(title)
+
+        subtitle = QLabel("Monitoraggio Professionale Rete PAI-PL")
+        subtitle.setStyleSheet("font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.7);")
+        title_layout.addWidget(subtitle)
+
+        layout.addWidget(title_container)
+
+        layout.addStretch()
+
+        # Stats section with modern cards
+        stats_container = QHBoxLayout()
+        stats_container.setSpacing(15)
+
+        # Stats labels
+        self.lbl_total = self._create_stat_label("Totale", "0", "#60a5fa")
+        self.lbl_online = self._create_stat_label("Online", "0", "#10b981")
+        self.lbl_offline = self._create_stat_label("Offline", "0", "#ef4444")
+        self.lbl_degraded = self._create_stat_label("Degradato", "0", "#f59e0b")
+
+        for lbl in [self.lbl_total, self.lbl_online, self.lbl_offline, self.lbl_degraded]:
+            stats_container.addWidget(lbl)
+
+        layout.addLayout(stats_container)
+
+        return header
+
+    def _create_stat_label(self, title, value, color):
+        """Create a modern stat label"""
+        container = QWidget()
+        container.setStyleSheet(f"""
+            QWidget {{
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 8px;
+                padding: 10px 16px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+            }}
+            QWidget:hover {{
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.25);
+            }}
+        """)
+
+        layout = QVBoxLayout(container)
+        layout.setSpacing(2)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        title_label = QLabel(title.upper())
+        title_label.setStyleSheet("""
+            font-size: 10px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            letter-spacing: 0.5px;
+        """)
+        layout.addWidget(title_label)
+
+        value_label = QLabel(value)
+        value_label.setObjectName("stat_value")
+        value_label.setStyleSheet(f"""
+            font-size: 24px;
+            font-weight: 700;
+            color: {color};
+            letter-spacing: -1px;
+        """)
+        layout.addWidget(value_label)
+
+        container.value_label = value_label
+        return container
+
+    def _create_monitoring_tab(self):
+        """Create enhanced monitoring tab"""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Monitoring table
+        self.monitoring_table = QTableWidget()
+        self.monitoring_table.setColumnCount(10)
+        self.monitoring_table.setHorizontalHeaderLabels([
+            "Stato", "Indirizzo IP", "Nome", "Tipo", "Posizione",
+            "PING", "WEB", "Ultimo Controllo", "Uptime %", "Azioni"
+        ])
+
+        # Enable context menu
+        self.monitoring_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.monitoring_table.customContextMenuRequested.connect(self._show_device_context_menu)
+
+        # Table styling - Modern Professional Design
+        self.monitoring_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.monitoring_table.setAlternatingRowColors(True)
+        self.monitoring_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.monitoring_table.setStyleSheet("""
+            QTableWidget {
+                background-color: rgba(15, 20, 25, 0.6);
+                border: 1px solid rgba(148, 163, 184, 0.2);
+                border-radius: 10px;
+                gridline-color: rgba(148, 163, 184, 0.1);
+                selection-background-color: rgba(37, 99, 235, 0.3);
+            }
+            QTableWidget::item {
+                padding: 12px 8px;
+                color: #e2e8f0;
+                font-size: 13px;
+                border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+            }
+            QTableWidget::item:selected {
+                background-color: rgba(37, 99, 235, 0.4);
+                color: white;
+            }
+            QTableWidget::item:hover {
+                background-color: rgba(37, 99, 235, 0.2);
+            }
+            QHeaderView::section {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #2563eb,
+                    stop:1 #1e40af);
+                color: white;
+                padding: 14px 8px;
+                font-weight: 600;
+                font-size: 13px;
+                border: none;
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            QHeaderView::section:first {
+                border-top-left-radius: 10px;
+            }
+            QHeaderView::section:last {
+                border-top-right-radius: 10px;
+                border-right: none;
+            }
+            QTableWidget::item:alternate {
+                background-color: rgba(30, 41, 59, 0.3);
+            }
+        """)
+
+        layout.addWidget(self.monitoring_table)
+
+        return widget
+
+    def _show_device_context_menu(self, position: QPoint):
+        """Show context menu on device right-click"""
+        item = self.monitoring_table.itemAt(position)
+        if item is None:
+            return
+
+        row = item.row()
+
+        # Get device IP from table
+        ip_item = self.monitoring_table.item(row, 1)
+        if not ip_item:
+            return
+
+        device_ip = ip_item.text()
+        device_name = self.monitoring_table.item(row, 2).text() if self.monitoring_table.item(row, 2) else device_ip
+
+        # Create context menu
+        menu = QMenu(self)
+
+        # Open in Web Browser
+        web_action = QAction("Apri nel Browser", self)
+        web_action.triggered.connect(lambda: self._open_in_browser(device_ip))
+        menu.addAction(web_action)
+
+        # Open in integrated SSH terminal
+        ssh_terminal_action = QAction("Apri nel Terminale SSH", self)
+        ssh_terminal_action.triggered.connect(lambda: self._open_in_ssh_terminal(device_ip))
+        menu.addAction(ssh_terminal_action)
+
+        menu.addSeparator()
+
+        # Force reboot
+        reboot_action = QAction("Forza Riavvio (SSH)", self)
+        reboot_action.triggered.connect(lambda: self._force_reboot_device(device_ip, device_name))
+        menu.addAction(reboot_action)
+
+        # Force check
+        check_action = QAction("Forza Controllo Ora", self)
+        check_action.triggered.connect(lambda: self._force_check_device(device_ip))
+        menu.addAction(check_action)
+
+        menu.addSeparator()
+
+        # Device details
+        details_action = QAction("Mostra Dettagli", self)
+        details_action.triggered.connect(lambda: self._show_device_details(device_ip, device_name))
+        menu.addAction(details_action)
+
+        # Show menu at cursor
+        menu.exec(QCursor.pos())
+
+    def _open_in_browser(self, device_ip: str):
+        """Open device in web browser"""
+        try:
+            # Try to get port from device config
+            url = f"http://{device_ip}"
+            webbrowser.open(url)
+            logger.info(f"Opening {url} in browser")
+            self.status_bar.showMessage(f"Opening {url} in browser...", 3000)
+        except Exception as e:
+            logger.error(f"Failed to open browser: {e}")
+            QMessageBox.warning(self, "Errore", f"Failed to open browser:\n{str(e)}")
+
+    def _open_in_ssh_terminal(self, device_ip: str):
+        """Open device in integrated SSH terminal"""
+        # Switch to SSH Terminal tab
+        self.tab_widget.setCurrentWidget(self.ssh_terminal)
+
+        # Connect to device
+        username = self.ssh_config.get('username', 'root')
+        password = self.ssh_config.get('password', '')
+
+        self.ssh_terminal.connect_to_device(device_ip, username, password)
+        logger.info(f"Opening integrated SSH terminal for {device_ip}")
+
+    def _force_reboot_device(self, device_ip: str, device_name: str):
+        """Force reboot device via SSH (non-blocking)"""
+        reply = QMessageBox.question(self, "Conferma Riavvio",
+                                     f"Sei sicuro di voler riavviare {device_name} ({device_ip})?\n\n"
+                                     f"Verrà eseguito il comando 'reboot' via SSH.",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Create worker thread for non-blocking SSH operation
+            self.reboot_worker = SSHRebootWorker(self.auto_recovery_service, device_ip, device_name)
+            self.reboot_worker.progress.connect(self._on_reboot_progress)
+            self.reboot_worker.finished.connect(self._on_reboot_finished)
+            self.reboot_worker.start()
+
+            # Show progress in status bar
+            self.status_bar.showMessage(f"⏳ Riavvio in corso per {device_name}...", 30000)
+            logger.info(f"Manual reboot initiated for {device_name} ({device_ip})")
+
+    def _on_reboot_progress(self, message: str):
+        """Handle reboot progress updates"""
+        self.status_bar.showMessage(f"⏳ {message}", 30000)
+
+    def _on_reboot_finished(self, success: bool, message: str):
+        """Handle reboot completion"""
+        if success:
+            QMessageBox.information(self, "Riavvio Avviato",
+                                  f"Comando di riavvio inviato con successo!\n\n{message}")
+            self.status_bar.showMessage("✓ Riavvio completato", 5000)
+        else:
+            QMessageBox.warning(self, "Riavvio Fallito",
+                              f"Errore durante il riavvio.\n\n{message}")
+            self.status_bar.showMessage("✗ Riavvio fallito", 5000)
+
+    def _force_check_device(self, device_ip: str):
+        """Force immediate check of device"""
+        try:
+            # Find device by IP
+            device_id = None
+            for dev_id, device in self.monitoring_engine.devices.items():
+                if device.ip_address == device_ip:
+                    device_id = dev_id
+                    break
+
+            if device_id:
+                # Reset last check time to force immediate check
+                self.monitoring_engine.last_check_times[device_id] = datetime.utcnow() - timedelta(hours=1)
+                self.status_bar.showMessage(f"✓ Check forzato per {device_ip}", 3000)
+                logger.info(f"Forced check for device {device_ip}")
+            else:
+                self.status_bar.showMessage(f"Device {device_ip} non trovato", 3000)
+        except Exception as e:
+            logger.error(f"Error forcing check: {e}")
+            self.status_bar.showMessage(f"Errore: {str(e)}", 3000)
+
+    def _show_device_details(self, device_ip: str, device_name: str):
+        """Show detailed device information"""
+        QMessageBox.information(self, "Device Details",
+                              f"Device: {device_name}\n"
+                              f"IP: {device_ip}\n\n"
+                              f"Detailed statistics coming soon!")
+
+    def _create_devices_tab(self):
+        """Create devices management tab"""
+        # Return the DevicesManager widget directly
+        devices_manager = DevicesManager()
+        devices_manager.devices_changed.connect(self._on_devices_changed)
+        return devices_manager
+
+    def _create_logs_tab(self):
+        """Create logs tab"""
+        # Return the LogsViewer widget directly
+        return LogsViewer()
+
+    def _create_status_bar(self):
+        """Create status bar"""
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+        self.status_bar.showMessage("Pronto")
+
+        # Add progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMaximumWidth(200)
+        self.progress_bar.setVisible(False)
+        self.status_bar.addPermanentWidget(self.progress_bar)
+
+    def _create_system_tray(self):
+        """Create system tray icon"""
+        if self.config.get('application.minimize_to_tray', True):
+            self.tray_icon = QSystemTrayIcon(self)
+
+            # Load icon
+            icon_path = Path(__file__).parent.parent.parent / "icon.ico"
+            if icon_path.exists():
+                self.tray_icon.setIcon(QIcon(str(icon_path)))
+            else:
+                # Fallback icon
+                pixmap = QPixmap(64, 64)
+                pixmap.fill(Qt.GlobalColor.transparent)
+                painter = QPainter(pixmap)
+                painter.setBrush(QBrush(QColor("#2563eb")))
+                painter.drawEllipse(0, 0, 64, 64)
+                painter.end()
+                self.tray_icon.setIcon(QIcon(pixmap))
+
+            self.tray_icon.setToolTip("PingMonitor Pro v2.0")
+
+            # Create menu
+            tray_menu = QMenu()
+            show_action = QAction("Mostra", self)
+            show_action.triggered.connect(self.show)
+            tray_menu.addAction(show_action)
+
+            quit_action = QAction("Esci", self)
+            quit_action.triggered.connect(self.quit_application)
+            tray_menu.addAction(quit_action)
+
+            self.tray_icon.setContextMenu(tray_menu)
+            self.tray_icon.show()
+
+    def start_monitoring(self):
+        """Start monitoring"""
+        try:
+            self.monitoring_engine.start()
+            self.btn_start.setEnabled(False)
+            self.btn_stop.setEnabled(True)
+            self.status_bar.showMessage("Monitoraggio Attivo")
+            logger.info("Monitoring started")
+        except Exception as e:
+            logger.error(f"Failed to start monitoring: {e}")
+            QMessageBox.critical(self, "Errore", f"Failed to start monitoring:\n{str(e)}")
+
+    def stop_monitoring(self):
+        """Stop monitoring"""
+        try:
+            self.monitoring_engine.stop()
+            self.btn_start.setEnabled(True)
+            self.btn_stop.setEnabled(False)
+            self.status_bar.showMessage("Monitoraggio Fermato")
+            logger.info("Monitoring stopped")
+        except Exception as e:
+            logger.error(f"Failed to stop monitoring: {e}")
+
+    def _on_check_complete(self, device, result):
+        """Handle check completion with intelligent alert logic"""
+        device_ip = device.ip_address
+        ping_ok = result.get('success', False)
+
+        # Check if web is OK (if web check enabled)
+        web_ok = True  # Default to true
+        if device.http_enabled or device.https_enabled:
+            # Would need to check web result here
+            # For now, simulate based on result
+            web_ok = result.get('success', False)
+
+        # Check if we should send alert using intelligent logic
+        if self.notification_service.should_send_alert(device_ip, ping_ok, web_ok):
+            # Prepare device info
+            device_info = {
+                'name': device.name,
+                'ip': device_ip,
+                'location': device.location,
+                'port': device.http_port if device.http_enabled else device.https_port
+            }
+
+            # Send email alert
+            self.notification_service.send_email_alert(
+                self.email_config,
+                device_info,
+                'manual_intervention_required'
+            )
+
+        # If ping OK but web NOT OK and no recovery attempt yet
+        if ping_ok and not web_ok and device_ip not in self.device_recovery_status:
+            # Attempt auto-recovery
+            logger.warning(f"Attempting auto-recovery for {device.name} ({device_ip})")
+
+            success, message = self.auto_recovery_service.attempt_recovery(device_ip, device.name)
+
+            if success:
+                # Mark recovery attempt
+                from datetime import datetime
+                self.notification_service.mark_recovery_attempt(device_ip, datetime.now())
+                self.device_recovery_status[device_ip] = {
+                    'status': 'recovering',
+                    'start_time': datetime.now()
+                }
+                self.status_bar.showMessage(f"Auto-recovery initiated for {device.name}", 5000)
+            else:
+                logger.error(f"Auto-recovery failed for {device.name}: {message}")
+
+    def _on_device_status_change(self, device, old_status, new_status):
+        """Handle device status change - sends alerts via email and Telegram"""
+        logger.info(f"Device {device.name} status changed: {old_status} -> {new_status}")
+
+        # Clear recovery status if device comes back online
+        if new_status == 'online' and device.ip_address in self.device_recovery_status:
+            del self.device_recovery_status[device.ip_address]
+            self.notification_service.clear_recovery(device.ip_address)
+
+        # Send Telegram notification (instant)
+        try:
+            self.notification_service.send_status_change_telegram(
+                device.name,
+                device.ip_address,
+                old_status,
+                new_status
+            )
+        except Exception as e:
+            logger.error(f"Error sending Telegram notification: {e}")
+
+        # Send email alert for critical status changes
+        should_send_email = self._should_send_status_email(device, old_status, new_status)
+
+        if should_send_email:
+            logger.info(f"Sending email alert for {device.name}: {old_status} -> {new_status}")
+            try:
+                self._send_status_change_email(device, old_status, new_status)
+            except Exception as e:
+                logger.error(f"Error sending status change email: {e}", exc_info=True)
+
+        # Immediate UI update for real-time status changes
+        self._update_ui()
+
+    def _should_send_status_email(self, device, old_status: str, new_status: str) -> bool:
+        """
+        Determine if email alert should be sent for status change
+
+        Args:
+            device: Device object
+            old_status: Previous status
+            new_status: New status
+
+        Returns:
+            True if email should be sent
+        """
+        # Don't send if email alerts disabled
+        if not self.email_config.get('enabled', False):
+            return False
+
+        # Send email for these critical transitions:
+        critical_transitions = [
+            ('online', 'offline'),   # Device went completely offline
+            ('online', 'degraded'),  # Device degraded (ping OK, web fail)
+            ('degraded', 'offline'), # Degraded device went offline
+        ]
+
+        # Send email for recoveries if configured
+        recovery_transitions = [
+            ('offline', 'online'),   # Full recovery
+            ('degraded', 'online'),  # Recovery from degradation
+        ]
+
+        alert_on_recovery = self.email_config.get('alert_on_recovery', True)
+
+        transition = (old_status, new_status)
+
+        if transition in critical_transitions:
+            return True
+
+        if transition in recovery_transitions and alert_on_recovery:
+            return True
+
+        return False
+
+    def _send_status_change_email(self, device, old_status: str, new_status: str) -> None:
+        """
+        Send email alert for device status change
+
+        Args:
+            device: Device object
+            old_status: Previous status
+            new_status: New status
+        """
+        from datetime import datetime
+
+        try:
+            # Prepare device info for email template
+            device_info = {
+                'name': device.name,
+                'ip': device.ip_address,
+                'location': getattr(device, 'location', 'N/A'),
+                'port': device.http_port if device.http_enabled else device.https_port,
+                'old_status': old_status.upper(),
+                'new_status': new_status.upper(),
+                'transition_time': datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')
+            }
+
+            # Determine alert type
+            if new_status == 'offline':
+                alert_type = 'device_offline'
+            elif new_status == 'degraded':
+                alert_type = 'device_degraded'
+            elif new_status == 'online' and old_status in ['offline', 'degraded']:
+                alert_type = 'device_recovered'
+            else:
+                alert_type = 'status_change'
+
+            # Send email using notification service
+            success = self.notification_service.send_status_change_email(
+                config=self.email_config,
+                device_info=device_info,
+                alert_type=alert_type
+            )
+
+            if success:
+                logger.info(f"Status change email sent for {device.name}")
+            else:
+                logger.warning(f"Failed to send status change email for {device.name}")
+
+        except Exception as e:
+            logger.error(f"Error sending status change email: {e}", exc_info=True)
+
+    def _on_devices_changed(self):
+        """Handle devices being added/edited/deleted"""
+        logger.info("Devices changed - reloading monitoring engine")
+        try:
+            # Reload devices in monitoring engine
+            self.monitoring_engine.load_devices()
+            self._update_ui()
+            logger.info("Devices reloaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to reload devices: {e}")
+
+    def _update_ui(self):
+        """Update UI with latest data"""
+        try:
+            # Update header stats
+            total = len(self.monitoring_engine.devices)
+            online = sum(1 for d in self.monitoring_engine.devices.values() if d.current_status == 'online')
+            offline = sum(1 for d in self.monitoring_engine.devices.values() if d.current_status == 'offline')
+            degraded = sum(1 for d in self.monitoring_engine.devices.values() if d.current_status == 'degraded')
+
+            # Update the value labels in the stat containers
+            self.lbl_total.value_label.setText(str(total))
+            self.lbl_online.value_label.setText(str(online))
+            self.lbl_offline.value_label.setText(str(offline))
+            self.lbl_degraded.value_label.setText(str(degraded))
+
+            # Update monitoring table
+            self._update_monitoring_table()
+
+        except Exception as e:
+            logger.error(f"Error updating UI: {e}")
+
+    def _update_monitoring_table(self):
+        """Update monitoring table with professional status indicators"""
+        try:
+            devices = list(self.monitoring_engine.devices.values())
+            self.monitoring_table.setRowCount(len(devices))
+
+            for row, device in enumerate(devices):
+                # Status column - Use StatusIndicatorCell with animated dot
+                status_cell = StatusIndicatorCell(device.current_status)
+                self.monitoring_table.setCellWidget(row, 0, status_cell)
+
+                # IP Address
+                self.monitoring_table.setItem(row, 1, QTableWidgetItem(device.ip_address))
+
+                # Name
+                self.monitoring_table.setItem(row, 2, QTableWidgetItem(device.name))
+
+                # Device Type - Remove any emoji characters
+                device_type = device.device_type
+                # Remove common emoji patterns
+                emoji_patterns = ['📱', '💻', '🖥', '📟', '⌚', '🔌']
+                for emoji in emoji_patterns:
+                    device_type = device_type.replace(emoji, '')
+                device_type = device_type.strip()
+                self.monitoring_table.setItem(row, 3, QTableWidgetItem(device_type))
+
+                # Location
+                self.monitoring_table.setItem(row, 4, QTableWidgetItem(device.location or "N/A"))
+
+                # PING Status - Professional colored cells without emoji
+                ping_status = getattr(device, 'ping_status', None)
+                if ping_status == 'success':
+                    ping_item = QTableWidgetItem("OK")
+                    ping_item.setForeground(QColor(DesignSystem.COLORS['status-online']))
+                    ping_item.setBackground(QColor(DesignSystem.COLORS['status-online-bg']))
+                elif ping_status == 'failed':
+                    ping_item = QTableWidgetItem("FAIL")
+                    ping_item.setForeground(QColor(DesignSystem.COLORS['status-offline']))
+                    ping_item.setBackground(QColor(DesignSystem.COLORS['status-offline-bg']))
+                else:
+                    ping_item = QTableWidgetItem("N/A")
+                    ping_item.setForeground(QColor("#6b7280"))
+                    ping_item.setBackground(QColor("rgba(100, 116, 139, 0.1)"))
+                self.monitoring_table.setItem(row, 5, ping_item)
+
+                # WEB Status - Professional colored cells without emoji
+                web_status = getattr(device, 'web_status', None)
+                if web_status == 'success':
+                    web_item = QTableWidgetItem("OK")
+                    web_item.setForeground(QColor(DesignSystem.COLORS['status-online']))
+                    web_item.setBackground(QColor(DesignSystem.COLORS['status-online-bg']))
+                elif web_status == 'failed':
+                    web_item = QTableWidgetItem("FAIL")
+                    web_item.setForeground(QColor(DesignSystem.COLORS['status-offline']))
+                    web_item.setBackground(QColor(DesignSystem.COLORS['status-offline-bg']))
+                else:
+                    web_item = QTableWidgetItem("N/A")
+                    web_item.setForeground(QColor("#6b7280"))
+                    web_item.setBackground(QColor("rgba(100, 116, 139, 0.1)"))
+                self.monitoring_table.setItem(row, 6, web_item)
+
+                # Format last check time in Italian format (day/month/year hour:minute:second)
+                if device.last_check_time and device.last_check_time != "Never":
+                    try:
+                        # Parse ISO format timestamp with robust handling
+                        from datetime import datetime
+                        if isinstance(device.last_check_time, str):
+                            # Handle multiple ISO8601 formats:
+                            # - "2025-01-17T14:30:45.123456" (microseconds)
+                            # - "2025-01-17T14:30:45" (no microseconds)
+                            # - "2025-01-17 14:30:45" (space separator)
+                            # - "2025-01-17T14:30:45Z" (UTC indicator)
+                            # - "2025-01-17T14:30:45+00:00" (timezone)
+                            timestamp_str = device.last_check_time.replace('Z', '+00:00').replace(' ', 'T')
+                            dt = datetime.fromisoformat(timestamp_str)
+                        else:
+                            # Already a datetime object
+                            dt = device.last_check_time
+                        # Format in Italian: day/month/year hour:minute:second
+                        last_check = dt.strftime('%d/%m/%Y %H:%M:%S')
+                    except (ValueError, AttributeError, TypeError) as e:
+                        logger.warning(f"Failed to parse last_check_time for {device.name}: {e} - Value: {device.last_check_time}")
+                        last_check = str(device.last_check_time) if device.last_check_time else "Mai"
+                else:
+                    last_check = "Mai"
+
+                last_check_item = QTableWidgetItem(last_check)
+                last_check_item.setForeground(QColor("#94a3b8"))  # Lighter gray for timestamps
+                self.monitoring_table.setItem(row, 7, last_check_item)
+
+                # Uptime percentage
+                self.monitoring_table.setItem(row, 8, QTableWidgetItem(f"{device.uptime_percentage:.1f}%"))
+
+                # Actions
+                self.monitoring_table.setItem(row, 9, QTableWidgetItem("..."))
+
+        except Exception as e:
+            logger.error(f"Error updating monitoring table: {e}")
+
+    def _on_settings_changed(self, new_config):
+        """Handle settings change"""
+        try:
+            logger.info("Settings changed - updating configuration")
+
+            # Update email config
+            if 'email' in new_config:
+                self.email_config = new_config['email']
+                # Update email test widget
+                self.email_test_widget.email_config = self.email_config
+
+            # Update SSH config
+            if 'ssh' in new_config:
+                self.ssh_config = new_config['ssh']
+                # Recreate auto-recovery service with new SSH config
+                self.auto_recovery_service = AutoRecoveryService(self.ssh_config)
+
+            # Show notification
+            self.status_bar.showMessage("Settings updated successfully!", 5000)
+
+            QMessageBox.information(
+                self,
+                "Settings Updated",
+                "Settings have been updated.\n\n"
+                "Note: Some changes may require restarting the monitoring to take full effect."
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to apply settings: {e}")
+            QMessageBox.warning(
+                self,
+                "Settings Error",
+                f"Failed to apply some settings:\n{str(e)}"
+            )
+
+    def _auto_import_devices(self):
+        """Auto-import devices from legacy config on startup"""
+        legacy_config_path = Path(__file__).parent.parent.parent / "config" / "config.json"
+
+        if legacy_config_path.exists():
+            try:
+                devices, email_cfg, ssh_cfg = ConfigImporter.import_from_legacy_config(legacy_config_path)
+
+                if devices:
+                    # Update configs
+                    if email_cfg:
+                        self.email_config = email_cfg
+                    if ssh_cfg:
+                        self.ssh_config = ssh_cfg
+                        self.auto_recovery_service = AutoRecoveryService(ssh_cfg)
+
+                    # Add devices to database
+                    session = db_manager.get_session()
+                    try:
+                        imported_count = 0
+
+                        for device_data in devices:
+                            # Check if device already exists
+                            existing = session.query(Device).filter_by(ip_address=device_data['ip_address']).first()
+
+                            if not existing:
+                                device = Device(**device_data)
+                                session.add(device)
+                                imported_count += 1
+
+                        session.commit()
+
+                        if imported_count > 0:
+                            logger.info(f"Auto-imported {imported_count} devices from legacy config")
+                            QMessageBox.information(self, "Devices Imported",
+                                                  f"Successfully imported {imported_count} devices from config.json")
+
+                        # Reload devices in monitoring engine
+                        self.monitoring_engine.load_devices()
+                    except Exception as db_error:
+                        logger.error(f"Database error during device import: {db_error}")
+                        session.rollback()
+                        raise
+                    finally:
+                        session.close()
+
+            except Exception as e:
+                logger.error(f"Failed to auto-import devices: {e}", exc_info=True)
+
+    def _import_devices_dialog(self):
+        """Show dialog to import devices"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Config File", "", "JSON Files (*.json);;All Files (*)"
+        )
+
+        if file_path:
+            self._auto_import_devices()
+
+    def _refresh_data(self):
+        """Refresh data from database and force immediate check"""
+        try:
+            # Step 1: Reload devices from database
+            logger.info("Refreshing devices from database...")
+            device_count = self.monitoring_engine.reload_devices()
+
+            # Step 2: Force immediate check on all devices
+            if self.monitoring_engine.running:
+                logger.info("Forcing immediate check on all devices...")
+                self.monitoring_engine.force_immediate_check()
+
+            # Step 3: Update UI
+            self._update_ui()
+
+            self.status_bar.showMessage(
+                f"✓ Data aggiornati - {device_count} dispositivi ricaricati e check forzato",
+                4000
+            )
+        except Exception as e:
+            logger.error(f"Error refreshing data: {e}", exc_info=True)
+            self.status_bar.showMessage(f"✗ Errore aggiornamento: {str(e)}", 3000)
+
+    def _check_now(self):
+        """Force immediate check of all devices and send email report"""
+        try:
+            if not self.monitoring_engine.running:
+                QMessageBox.warning(
+                    self,
+                    "Monitoraggio Non Attivo",
+                    "Il monitoraggio non è attivo.\n\nAvvia il monitoraggio prima di eseguire un check manuale."
+                )
+                return
+
+            # Show loading message
+            self.status_bar.showMessage("⚡ Esecuzione check istantaneo su tutti i dispositivi...", 30000)
+
+            # Force immediate check by resetting last check times
+            logger.info("MANUAL CHECK NOW: Forcing immediate check on all devices")
+            for device_id in self.monitoring_engine.devices.keys():
+                # Reset last check time to force immediate check
+                self.monitoring_engine.last_check_times[device_id] = datetime.utcnow() - timedelta(hours=10)
+
+            # Update UI
+            self._update_ui()
+
+            # Show confirmation
+            QMessageBox.information(
+                self,
+                "Check Istantaneo",
+                f"Check istantaneo avviato su {len(self.monitoring_engine.devices)} dispositivi.\n\n"
+                "Attendere circa 30 secondi per il completamento dei controlli.\n"
+                "Riceverai un'email di report con tutti i dettagli."
+            )
+
+            # Schedule email send after checks complete (30 seconds)
+            QTimer.singleShot(30000, self._send_check_now_report)
+
+        except Exception as e:
+            logger.error(f"Error in check now: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Errore",
+                f"Errore durante il check istantaneo:\n{str(e)}"
+            )
+
+    def _send_check_now_report(self):
+        """Send aggregated email report with current device statuses after Check Now completes"""
+        try:
+            logger.info("CHECK NOW: Sending email report with real-time device statuses after manual check")
+
+            # Get all devices with current status for real-time reporting
+            all_devices = list(self.monitoring_engine.devices.values())
+
+            # Force send aggregated email even if there are no pending items
+            # (to inform user that check was completed)
+            success, message = self.aggregated_email_service.send_aggregated_email(
+                force=True,
+                all_devices=all_devices
+            )
+
+            if success:
+                logger.info(f"Check Now report sent successfully: {message}")
+                self.status_bar.showMessage(f"✓ Check completato e email inviata: {message}", 10000)
+                QMessageBox.information(
+                    self,
+                    "Report Inviato",
+                    f"Check istantaneo completato!\n\n{message}\n\n"
+                    "L'email di report è stata inviata con tutti i dettagli:\n"
+                    "- Stato in tempo reale di TUTTI i dispositivi\n"
+                    "- Dispositivi recuperati automaticamente\n"
+                    "- Dispositivi che richiedono intervento manuale"
+                )
+            else:
+                logger.warning(f"Check Now report failed: {message}")
+                self.status_bar.showMessage(f"⚠ Check completato ma email non inviata: {message}", 10000)
+                QMessageBox.warning(
+                    self,
+                    "Email Non Inviata",
+                    f"Check completato ma si è verificato un errore nell'invio dell'email:\n\n{message}"
+                )
+
+        except Exception as e:
+            logger.error(f"Error sending Check Now report: {e}", exc_info=True)
+            self.status_bar.showMessage(f"Errore invio report: {str(e)}", 10000)
+
+    def _add_device(self):
+        """Show add device dialog"""
+        QMessageBox.information(self, "Add Device", "Add device dialog - Coming soon!")
+
+    def _export_devices_csv(self):
+        """Export devices list to CSV"""
+        try:
+            # Get file path from user
+            default_path = str(ExportService.get_default_export_path("devices"))
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Esporta Dispositivi",
+                default_path,
+                "CSV Files (*.csv);;All Files (*)"
+            )
+
+            if not file_path:
+                return  # User cancelled
+
+            # Get devices
+            devices = list(self.monitoring_engine.devices.values())
+
+            if not devices:
+                QMessageBox.warning(
+                    self,
+                    "Nessun Dispositivo",
+                    "Non ci sono dispositivi da esportare."
+                )
+                return
+
+            # Export
+            success, message = ExportService.export_devices_to_csv(devices, file_path)
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Esportazione Completata",
+                    f"Dispositivi esportati con successo!\n\n{message}"
+                )
+                logger.info(f"Devices exported to {file_path}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Errore Esportazione",
+                    f"Errore durante l'esportazione:\n\n{message}"
+                )
+
+        except Exception as e:
+            logger.error(f"Export devices error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Errore",
+                f"Errore durante l'esportazione:\n\n{str(e)}"
+            )
+
+    def _export_check_results(self):
+        """Export check results to CSV"""
+        try:
+            # Ask for time range
+            days, ok = QInputDialog.getInt(
+                self,
+                "Periodo Esportazione",
+                "Esporta check results degli ultimi N giorni:",
+                7, 1, 365, 1
+            )
+
+            if not ok:
+                return  # User cancelled
+
+            # Get file path
+            default_path = str(ExportService.get_default_export_path("check_results"))
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Esporta Check Results",
+                default_path,
+                "CSV Files (*.csv);;All Files (*)"
+            )
+
+            if not file_path:
+                return
+
+            # Get check results from database
+            from datetime import datetime, timedelta
+            session = db_manager.get_session()
+            try:
+                cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+                check_results = session.query(CheckResult).filter(
+                    CheckResult.check_time >= cutoff_date.isoformat()
+                ).all()
+
+                if not check_results:
+                    QMessageBox.warning(
+                        self,
+                        "Nessun Dato",
+                        f"Non ci sono check results negli ultimi {days} giorni."
+                    )
+                    return
+
+                # Export
+                success, message = ExportService.export_check_results_to_csv(check_results, file_path)
+            finally:
+                session.close()
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Esportazione Completata",
+                    f"Check results esportati con successo!\n\n{message}"
+                )
+                logger.info(f"Check results exported to {file_path}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Errore Esportazione",
+                    f"Errore durante l'esportazione:\n\n{message}"
+                )
+
+        except Exception as e:
+            logger.error(f"Export check results error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Errore",
+                f"Errore durante l'esportazione:\n\n{str(e)}"
+            )
+
+    def _export_monitoring_report(self):
+        """Export comprehensive monitoring report to CSV"""
+        try:
+            # Get file path
+            default_path = str(ExportService.get_default_export_path("report"))
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Esporta Report Monitoraggio",
+                default_path,
+                "CSV Files (*.csv);;All Files (*)"
+            )
+
+            if not file_path:
+                return
+
+            # Get devices and statistics
+            devices = list(self.monitoring_engine.devices.values())
+            stats = self.monitoring_engine.get_statistics()
+
+            # Calculate additional stats
+            total = len(devices)
+            online = sum(1 for d in devices if d.current_status == 'online')
+            offline = sum(1 for d in devices if d.current_status == 'offline')
+            degraded = sum(1 for d in devices if d.current_status == 'degraded')
+
+            stats.update({
+                'total_devices': total,
+                'online': online,
+                'offline': offline,
+                'degraded': degraded
+            })
+
+            if not devices:
+                QMessageBox.warning(
+                    self,
+                    "Nessun Dato",
+                    "Non ci sono dati da esportare."
+                )
+                return
+
+            # Export
+            success, message = ExportService.export_monitoring_report_to_csv(
+                devices, stats, file_path
+            )
+
+            if success:
+                QMessageBox.information(
+                    self,
+                    "Esportazione Completata",
+                    f"Report esportato con successo!\n\n{message}"
+                )
+                logger.info(f"Monitoring report exported to {file_path}")
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Errore Esportazione",
+                    f"Errore durante l'esportazione:\n\n{message}"
+                )
+
+        except Exception as e:
+            logger.error(f"Export report error: {e}", exc_info=True)
+            QMessageBox.critical(
+                self,
+                "Errore",
+                f"Errore durante l'esportazione:\n\n{str(e)}"
+            )
+
+    def _toggle_fullscreen(self):
+        """Toggle fullscreen mode"""
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def _show_settings(self):
+        """Show settings dialog"""
+        QMessageBox.information(self, "Settings", "Settings dialog - Coming soon!")
+
+    def _show_ssh_terminal(self):
+        """Show SSH terminal tab"""
+        self.tab_widget.setCurrentWidget(self.ssh_terminal)
+
+    def _show_about(self):
+        """Show about dialog"""
+        QMessageBox.about(self, "About PingMonitor Pro",
+                          "<h2>PingMonitor Pro v2.0</h2>"
+                          "<p>Professional Network Monitoring Solution with Advanced Features</p>"
+                          "<p><b>Created by:</b> Fabrizio Cerchia</p>"
+                          "<p><b>New Features:</b></p>"
+                          "<ul>"
+                          "<li>Intelligent email alerts with auto-recovery</li>"
+                          "<li>SSH auto-reboot on web service failure</li>"
+                          "<li>Integrated SSH terminal</li>"
+                          "<li>Right-click context menu (Browser/SSH Terminal)</li>"
+                          "<li>Automatic device import</li>"
+                          "<li>Real-time monitoring with adaptive intervals</li>"
+                          "</ul>")
+
+    def quit_application(self):
+        """Force quit application (from tray Exit)"""
+        reply = QMessageBox.question(self, "Conferma Uscita",
+                                     "Sei sicuro di voler uscire da PingMonitor Pro?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Perform cleanup
+            self._perform_cleanup()
+
+            # Hide tray icon
+            if hasattr(self, 'tray_icon'):
+                self.tray_icon.hide()
+
+            # Quit application
+            from PyQt6.QtWidgets import QApplication
+            QApplication.quit()
+
+    def closeEvent(self, event):
+        """Handle window close event with proper cleanup"""
+        if self.config.get('application.minimize_to_tray', True):
+            event.ignore()
+            self.hide()
+            if hasattr(self, 'tray_icon'):
+                self.tray_icon.showMessage(
+                    "PingMonitor Pro",
+                    "Applicazione minimizzata nella tray",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    2000
+                )
+        else:
+            reply = QMessageBox.question(self, "Conferma Uscita",
+                                         "Sei sicuro di voler uscire?",
+                                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
+            if reply == QMessageBox.StandardButton.Yes:
+                self._perform_cleanup()
+                event.accept()
+            else:
+                event.ignore()
+
+    def _perform_cleanup(self):
+        """Perform proper cleanup before closing"""
+        logger.info("Application closing - starting cleanup...")
+
+        try:
+            # 1. Stop monitoring engine first
+            if hasattr(self, 'monitoring_engine') and self.monitoring_engine and self.monitoring_engine.running:
+                logger.info("Stopping monitoring engine...")
+                self.monitoring_engine.stop()
+                # Wait max 3 seconds for clean stop
+                start = time.time()
+                while self.monitoring_engine.running and (time.time() - start) < 3:
+                    from PyQt6.QtWidgets import QApplication
+                    QApplication.processEvents()
+                    time.sleep(0.1)
+
+            # 2. Stop all timers
+            logger.info("Stopping timers...")
+            if hasattr(self, 'update_timer'):
+                self.update_timer.stop()
+            if hasattr(self, 'email_aggregate_timer'):
+                self.email_aggregate_timer.stop()
+
+            # 3. Close SSH connections
+            if hasattr(self, 'ssh_terminal'):
+                logger.info("Closing SSH terminal...")
+                try:
+                    self.ssh_terminal.close()
+                except Exception as e:
+                    logger.debug(f"SSH terminal close warning: {e}")
+
+            # 4. Close auto-recovery service SSH connections
+            if hasattr(self, 'auto_recovery_service') and self.auto_recovery_service:
+                logger.info("Closing auto-recovery connections...")
+                try:
+                    self.auto_recovery_service.cleanup()
+                except Exception as e:
+                    logger.debug(f"Auto-recovery cleanup warning: {e}")
+                self.auto_recovery_service = None
+
+            # 5. Flush database writes
+            logger.info("Flushing database...")
+            try:
+                from ..services.performance_service import batch_writer
+                batch_writer.force_flush()
+            except Exception as e:
+                logger.debug(f"Batch writer flush warning: {e}")
+
+            # 6. Close database connections
+            logger.info("Closing database connections...")
+            try:
+                from ..models.base import db_manager
+                db_manager.close_all_sessions()
+            except Exception as e:
+                logger.debug(f"Database close warning: {e}")
+
+            # 7. Save window geometry and config
+            logger.info("Saving configuration...")
+            try:
+                geometry = {
+                    'width': self.width(),
+                    'height': self.height()
+                }
+                self.config.set('ui.window_geometry', geometry)
+                self.config.save()
+            except Exception as e:
+                logger.debug(f"Config save warning: {e}")
+
+            logger.info("Cleanup completed successfully")
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}", exc_info=True)
+
+
+    def _on_recovery_success    def _on_recovery_success(self, device, message):
+        """
+        Callback when auto-recovery succeeds
+
+        Args:
+            device: Device that was recovered
+            message: Recovery success message
+        """
+        try:
+            logger.info(f"Recovery callback - SUCCESS: {device.name} ({device.ip_address})")
+            self.aggregated_email_service.add_recovery_success(device)
+        except Exception as e:
+            logger.error(f"Error in recovery success callback: {e}")
+
+    def _on_recovery_failure    def _on_recovery_success(self, device, message):
+        """
+        Callback when auto-recovery fails
+
+        Args:
+            device: Device that failed recovery
+            message: Failure reason
+        """
+        try:
+            logger.info(f"Recovery callback - FAILURE: {device.name} ({device.ip_address}) - {message}")
+            self.aggregated_email_service.add_recovery_failure(device, message)
+        except Exception as e:
+            logger.error(f"Error in recovery failure callback: {e}")
+
+    def _test_ssh_connectivity(self):
+        """
+        Test SSH connectivity with first available device at startup
+        This helps verify SSH credentials early
+        """
+        try:
+            # Get first device from monitoring engine
+            if not self.monitoring_engine.devices:
+                logger.info("No devices available for SSH connectivity test")
+                return
+
+            # Get first device
+            first_device = next(iter(self.monitoring_engine.devices.values()))
+            device_ip = first_device.ip_address
+            device_name = first_device.name
+
+            logger.info(f"Testing SSH connectivity to {device_name} ({device_ip})...")
+
+            # Test SSH connectivity
+            success, message = self.auto_recovery_service.check_ssh_connectivity(device_ip)
+
+            if success:
+                logger.info(f"✓ SSH connectivity test PASSED: {message}")
+                logger.info(f"Auto-recovery is ready for use with credentials: {self.ssh_config.get('username')}")
+            else:
+                logger.warning(f"✗ SSH connectivity test FAILED: {message}")
+                logger.warning("Auto-recovery may not work properly. Check SSH credentials in config.json")
+                # Show warning to user
+                QMessageBox.warning(
+                    self,
+                    "SSH Connectivity Warning",
+                    f"SSH connectivity test failed:
+
+{message}
+
+"
+                    f"Auto-recovery functionality may not work.
+"
+                    f"Please verify SSH credentials in config.json"
+                )
+
+        except Exception as e:
+            logger.error(f"Error testing SSH connectivity: {e}", exc_info=True)
+
+        def _send_aggregated_email(self):
+        """
+        Send aggregated email with all recovery results and current device statuses (called every 6 hours)
+        """
+        try:
+            from datetime import datetime
+            logger.info("=" * 80)
+            logger.info(f"SCHEDULED EMAIL REPORT TRIGGERED - {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+            logger.info("=" * 80)
+
+            if self.aggregated_email_service.should_send_email():
+                logger.info("Sending aggregated recovery email with current device statuses...")
+
+                # Get all devices with current status for real-time reporting
+                all_devices = list(self.monitoring_engine.devices.values())
+
+                success, message = self.aggregated_email_service.send_aggregated_email(
+                    force=False,
+                    all_devices=all_devices
+                )
+
+                if success:
+                    logger.info(f"✓ Aggregated email sent successfully: {message}")
+                    self.status_bar.showMessage(f"✓ Email report inviata: {message}", 10000)
+                else:
+                    logger.error(f"✗ Failed to send aggregated email: {message}")
+                    self.status_bar.showMessage(f"✗ Errore invio email: {message}", 10000)
+            else:
+                logger.info("No pending recovery results to send - skipping email")
+                logger.info("Next scheduled email in 6 hours")
+        except Exception as e:
+            logger.error(f"Error sending aggregated email: {e}", exc_info=True)
